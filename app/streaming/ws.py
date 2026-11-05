@@ -64,7 +64,9 @@ def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> Stream
         call = db.get(Call, call_id)
         employee = db.get(AIEmployee, call.employee_id)
         stt, llm, tts = factory.build_providers(employee)
-        mode = _call_modes.pop(call_id, "campaign")
+        cf = call.captured_fields or {}
+        mode = _call_modes.pop(call_id, cf.get("mode", "ai_agent"))
+        greeting = cf.get("greeting", "")
 
         holder: dict[str, StreamSession] = {}
 
@@ -86,6 +88,7 @@ def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> Stream
             send=send,
             on_end=end,
             mode=mode,
+            greeting=greeting,
         )
         holder["session"] = session
         return session

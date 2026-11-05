@@ -160,3 +160,22 @@ def test_stop_without_speech_still_finalizes(client, monkeypatch):
         call = db.get(Call, call_id)
         assert call.status == CallStatus.COMPLETED
         assert call.outcome == "no_resolution"
+
+
+def test_stream_session_predefined_greeting(client, monkeypatch):
+    call_id = seed_call()
+    with SessionLocal() as db:
+        call = db.get(Call, call_id)
+        call.captured_fields = {"greeting": "Namaskaram, ela unnaru?", "mode": "ai_agent"}
+        db.commit()
+
+    use_providers(monkeypatch, MockAsyncSTT([]), MockAsyncLLM([[]]))
+    with connect(client, call_id) as ws:
+        ws.send_text(json.dumps({"event": "start", "stream_sid": "S4"}))
+        ws.send_text(json.dumps({"event": "stop"}))
+
+    with SessionLocal() as db:
+        turns = db.query(CallTurn).filter_by(call_id=call_id).order_by(CallTurn.id).all()
+        assert len(turns) >= 1
+        assert turns[0].role == "agent"
+        assert turns[0].text == "Namaskaram, ela unnaru?"

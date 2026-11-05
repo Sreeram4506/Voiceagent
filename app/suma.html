@@ -1731,10 +1731,13 @@ async function addMember() {
 // ═══════════════════════════════════════════════════════════
 // EMPLOYEES (Screen: single call + excel campaign)
 // ═══════════════════════════════════════════════════════════
+let _cachedEmployees = [];
+
 async function renderEmployees() {
   $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading employees…</div>`;
   const employees = await api('/api/employees');
   if (!Array.isArray(employees)) { $('view').innerHTML = `<div class="text-red-500 p-6">Failed to load employees.</div>`; return; }
+  _cachedEmployees = employees;
 
   $('view').innerHTML = `
     <div class="max-w-6xl mx-auto space-y-5">
@@ -1817,18 +1820,22 @@ async function renderEmployees() {
 }
 
 function showSingleCallModal(employeeId, employeeName) {
+  const emp = (_cachedEmployees || []).find(e => e.id === employeeId) || {};
+  const defaultGreeting = emp.greeting || `నమస్కారం అండి, నేను ${employeeName} మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?`;
+
   showModal(`
-    <div class="bg-white rounded-2xl p-6 w-96 shadow-modal">
+    <div class="bg-white rounded-2xl p-6 shadow-modal" style="width:480px;max-width:calc(100vw-32px)">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
           <span class="material-symbols-outlined text-white">phone</span>
         </div>
         <div>
           <h3 class="text-[16px] font-bold text-on-surface">Single Call</h3>
-          <p class="text-[11px] text-on-surface-variant">Agent: <strong>${esc(employeeName)}</strong></p>
+          <p class="text-[11px] text-on-surface-variant">Agent: <strong>${esc(employeeName)}</strong> · ${emp.language ? emp.language.toUpperCase() : 'TE'}</p>
         </div>
       </div>
-      <div class="space-y-3">
+
+      <div class="space-y-3.5">
         <div>
           <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Phone Number *</label>
           <div class="relative">
@@ -1836,15 +1843,44 @@ function showSingleCallModal(employeeId, employeeName) {
             <input class="input pl-9" id="scPhone" placeholder="+91 98765 43210" type="tel" autofocus/>
           </div>
         </div>
+
         <div>
           <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Contact Name</label>
-          <input class="input" id="scName" placeholder="Optional"/>
+          <input class="input" id="scName" placeholder="Optional caller name"/>
         </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Call Mode</label>
+          <select id="scMode" class="input" onchange="_toggleScGreeting(this.value)">
+            <option value="ai_agent" selected>🎙️ AI Employee (Live Conversational AI — STT + LLM + TTS)</option>
+            <option value="broadcast">📻 Pre-recorded Audio Broadcast</option>
+          </select>
+        </div>
+
+        <div id="scGreetingWrap">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Predefined Opening Ask / Greeting</label>
+            <span class="text-[10px] text-primary cursor-pointer hover:underline" onclick="_setScPreset('clear')">Clear (AI Decides)</span>
+          </div>
+
+          <!-- Quick presets for opening questions -->
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            <button type="button" onclick="_setScPreset('intro')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">👋 Intro</button>
+            <button type="button" onclick="_setScPreset('appointment')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">📅 Appointment</button>
+            <button type="button" onclick="_setScPreset('campaign')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">🗳️ Campaign</button>
+            <button type="button" onclick="_setScPreset('english')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">🇬🇧 English</button>
+          </div>
+
+          <textarea class="textarea" id="scGreeting" rows="2" placeholder="Predefined question or greeting the agent asks upon answering…">${esc(defaultGreeting)}</textarea>
+          <p class="text-[10px] text-on-surface-variant mt-1">The AI agent speaks this immediately when the call connects, then listens for the caller's reply.</p>
+        </div>
+
         <div>
           <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Notes</label>
-          <textarea class="textarea" id="scNotes" rows="2" placeholder="Optional context for the agent…"></textarea>
+          <textarea class="textarea" id="scNotes" rows="1" placeholder="Optional context or instructions…"></textarea>
         </div>
       </div>
+
       <div class="flex gap-2 mt-5">
         <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
         <button id="scBtn" onclick="doSingleCall(${employeeId})" class="btn-primary flex-1">
@@ -1856,10 +1892,34 @@ function showSingleCallModal(employeeId, employeeName) {
   setTimeout(() => $('scPhone')?.focus(), 50);
 }
 
+function _toggleScGreeting(mode) {
+  const wrap = $('scGreetingWrap');
+  if (wrap) wrap.style.display = (mode === 'broadcast') ? 'none' : 'block';
+}
+
+function _setScPreset(type) {
+  const g = $('scGreeting');
+  if (!g) return;
+  if (type === 'clear') {
+    g.value = '';
+  } else if (type === 'intro') {
+    g.value = 'నమస్కారం అండి, నేను సుమ మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?';
+  } else if (type === 'appointment') {
+    g.value = 'నమస్కారం అండి, మీ అపాయింట్‌మెంట్ మరియు సైట్ విజిట్ బుకింగ్ గురించి కాల్ చేసాను. మీకు ఏ సమయం అనుకూలంగా ఉంటుంది?';
+  } else if (type === 'campaign') {
+    g.value = 'హలో అండి, నేను క్యాంపెయిన్ టీమ్ నుండి మాట్లాడుతున్నాను. రాబోయే ఎన్నికల్లో మీ మద్దతు మరియు విలువైన సూచనల కోసం కాల్ చేశాను.';
+  } else if (type === 'english') {
+    g.value = 'Hello! I am calling from our team regarding your inquiry. Do you have a quick minute to speak?';
+  }
+}
+
 async function doSingleCall(employeeId) {
   const phone = $('scPhone')?.value?.trim();
   const name = $('scName')?.value?.trim();
   const notes = $('scNotes')?.value?.trim();
+  const mode = $('scMode')?.value || 'ai_agent';
+  const greeting = $('scGreeting')?.value?.trim() || '';
+
   if (!phone) { toast('Phone number is required', false); return; }
 
   const btn = $('scBtn');
@@ -1867,11 +1927,12 @@ async function doSingleCall(employeeId) {
 
   const r = await api(`/api/employees/${employeeId}/single-call`, {
     method: 'POST',
-    body: JSON.stringify({phone, name: name||null, notes: notes||null}),
+    body: JSON.stringify({phone, name: name||null, notes: notes||null, mode, greeting}),
   });
 
   if (r.ok) {
-    toast(`✓ Call initiated to ${r.phone || phone}`);
+    const modeLabel = mode === 'broadcast' ? 'Broadcast' : 'AI Conversation';
+    toast(`✓ ${modeLabel} call initiated to ${r.phone || phone}`);
     hideModal();
     setTimeout(() => go('live-calls'), 800);
   } else {
@@ -1881,9 +1942,12 @@ async function doSingleCall(employeeId) {
 }
 
 function showExcelCampaignModal(employeeId, employeeName) {
+  const emp = (_cachedEmployees || []).find(e => e.id === employeeId) || {};
+  const defaultGreeting = emp.greeting || `నమస్కారం అండి, నేను ${employeeName} మాట్లాడుతున్నాను.`;
   const today = new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'});
+
   showModal(`
-    <div class="bg-white rounded-2xl p-6 shadow-modal" style="width:500px;max-width:calc(100vw-32px)">
+    <div class="bg-white rounded-2xl p-6 shadow-modal" style="width:520px;max-width:calc(100vw-32px)">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
           <span class="material-symbols-outlined text-white">upload_file</span>
@@ -1898,6 +1962,19 @@ function showExcelCampaignModal(employeeId, employeeName) {
         <div>
           <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Campaign Name *</label>
           <input class="input" id="ecName" placeholder="November Outreach" value="Excel Campaign ${today}"/>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Call Mode</label>
+          <select id="ecMode" class="input">
+            <option value="ai_agent" selected>🎙️ AI Employee (Live Conversational AI — STT + LLM + TTS)</option>
+            <option value="broadcast">📻 Pre-recorded Audio Broadcast</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Predefined Opening Ask / Greeting</label>
+          <input class="input" id="ecGreeting" placeholder="Optional predefined opening greeting or question" value="${esc(defaultGreeting)}"/>
         </div>
 
         <div>
@@ -1955,6 +2032,9 @@ async function doExcelCampaign(employeeId) {
   const fileEl = $('ecFile');
   const btn = $('ecBtn');
   const campaignName = nameEl?.value?.trim() || 'Excel Campaign';
+  const mode = $('ecMode')?.value || 'ai_agent';
+  const greeting = $('ecGreeting')?.value?.trim() || '';
+
   if (!fileEl?.files[0]) { toast('Please select a file', false); return; }
 
   btn.disabled = true;
@@ -1963,6 +2043,8 @@ async function doExcelCampaign(employeeId) {
   const fd = new FormData();
   fd.append('file', fileEl.files[0]);
   fd.append('campaign_name', campaignName);
+  fd.append('mode', mode);
+  fd.append('greeting', greeting);
 
   try {
     const res = await fetch(`/dashboard/api/employees/${employeeId}/excel-campaign`, {

@@ -6,10 +6,11 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import AIEmployee, Call, CallDirection, CallStatus, Lead, LeadStatus, Tenant
+from app.models import AIEmployee, Call, CallDirection, CallStatus, Campaign, Lead, LeadStatus, Tenant
 from app.providers.base import TelephonyProvider
 from app.services.billing import balance_paise
 from app.services.compliance import DNDRegistry, check_lead
+from app.streaming.ws import set_call_mode
 
 
 @dataclass
@@ -68,6 +69,15 @@ def dispatch_due(
             continue
 
         # Create the call row first so its id can travel with the dial request.
+        call_mode = "ai_agent"
+        call_greeting = ""
+        if lead.campaign_id:
+            camp = session.get(Campaign, lead.campaign_id)
+            if camp:
+                call_greeting = camp.greeting or ""
+                if camp.config and isinstance(camp.config, dict):
+                    call_mode = camp.config.get("mode", "ai_agent")
+
         call = Call(
             tenant_id=tenant.id,
             lead_id=lead.id,
@@ -75,9 +85,16 @@ def dispatch_due(
             direction=CallDirection.OUTBOUND,
             status=CallStatus.DIALING,
             started_at=now,
+            captured_fields={
+                "phone": lead.phone_e164,
+                "name": lead.name,
+                "mode": call_mode,
+                "greeting": call_greeting,
+            },
         )
         session.add(call)
         session.flush()
+        set_call_mode(call.id, call_mode)
 
         result = telephony.dial(
             lead.phone_e164,

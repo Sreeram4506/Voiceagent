@@ -1093,11 +1093,14 @@ def _openai_reply(api_key: str, message: str, prior: list[dict[str, str]]) -> st
 async def employee_single_call(request: Request, employee_id: int, payload: dict):
     """Dispatch a single outbound call from a specific voice agent."""
     from app.dashboard import _to_e164
+    from app.streaming.ws import set_call_mode
     tid = _require_tid(request)
 
     phone_raw = str(payload.get("phone") or "").strip()
     name = str(payload.get("name") or "").strip() or None
     notes = str(payload.get("notes") or "").strip()
+    mode = str(payload.get("mode") or "ai_agent").strip()
+    greeting = str(payload.get("greeting") or "").strip()
 
     if not phone_raw:
         return {"error": "Phone number required"}
@@ -1123,6 +1126,11 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
         emp = db.query(AIEmployee).filter(AIEmployee.id == employee_id, AIEmployee.tenant_id == tid).first()
         if not emp:
             return {"error": "Employee not found"}
+
+        if not greeting:
+            extras = _setting(db, _tenant_setting_key(tid, "employee_extras"), {})
+            emp_extra = extras.get(str(emp.id), {})
+            greeting = emp_extra.get("greeting", "")
 
         # Ensure employee has a caller ID (phone_number field); use env var or fallback mock
         if not emp.phone_number:
@@ -1161,9 +1169,18 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
             direction=CallDirection.OUTBOUND,
             status=CallStatus.DIALING,
             started_at=now,
+            captured_fields={
+                "phone": phone,
+                "name": name,
+                "notes": notes,
+                "mode": mode,
+                "greeting": greeting,
+            },
         )
         db.add(call)
         db.flush()
+
+        set_call_mode(call.id, mode)
 
         callback_url = f"{settings.public_url}/v1/plivo/status/{call.id}"
         result = telephony.dial(phone, emp.phone_number, callback_url, custom_field=str(call.id))
@@ -1178,7 +1195,7 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
             lead.status = LeadStatus.QUEUED
 
         _log(db, tid, "single_call.dialed",
-             f"{name or phone} → {result.provider_call_id or 'mock'}", actor="dashboard")
+             f"{name or phone} ({mode}) → {result.provider_call_id or 'mock'}", actor="dashboard")
         db.commit()
 
         return {
@@ -1189,6 +1206,8 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
             "phone": phone,
             "accepted": result.accepted,
             "provider_call_id": result.provider_call_id,
+            "mode": mode,
+            "greeting": greeting,
         }
 
 
@@ -1198,6 +1217,8 @@ async def employee_excel_campaign(
     employee_id: int,
     file: UploadFile = File(...),
     campaign_name: str = Form("Excel Campaign"),
+    mode: str = Form("ai_agent"),
+    greeting: str = Form(""),
 ):
     """Upload an Excel/CSV file and launch a bulk call campaign from a specific voice agent."""
     import openpyxl
@@ -1247,6 +1268,8 @@ async def employee_excel_campaign(
             employee_id=employee_id,
             contact_list_id=cl.id,
             name=campaign_name,
+            greeting=greeting or "",
+            config={"mode": mode or "ai_agent"},
             status=CampaignStatus.RUNNING,
             launched_at=_now(),
         )

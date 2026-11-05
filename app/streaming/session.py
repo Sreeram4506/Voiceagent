@@ -46,7 +46,8 @@ class StreamSession:
         send: Send,
         on_end: OnEnd | None = None,
         vad: EnergyVAD | None = None,
-        mode: str = "campaign",
+        mode: str = "ai_agent",
+        greeting: str = "",
     ):
         self.stt, self.llm, self.tts = stt, llm, tts
         self.script, self.language, self.voice_tier = script, language, voice_tier
@@ -55,6 +56,7 @@ class StreamSession:
         self._on_end = on_end
         self.vad = vad or EnergyVAD()
         self.mode = mode
+        self.greeting = greeting
 
         self.history: list[tuple[str, str]] = []
         self.turns: list[tuple[str, str]] = []   # (role, text) in call order, for persistence
@@ -96,7 +98,7 @@ class StreamSession:
         return "no_resolution"
 
     async def _speak_opening(self) -> None:
-        """Play pre-recorded audio or TTS greeting depending on mode."""
+        """Play pre-recorded audio or speak greeting depending on mode."""
         self._speaking_opening = True
         try:
             if self.mode == "broadcast":
@@ -113,6 +115,13 @@ class StreamSession:
                 self.ended = True
                 if self._on_end:
                     await self._safe_end()
+            elif self.greeting and self.greeting.strip():
+                # Speak the predefined opening greeting/question, then listen for caller
+                greet_text = self.greeting.strip()
+                print(f"[AI-AGENT] speaking predefined greeting/ask: {greet_text}")
+                self.turns.append(("agent", greet_text))
+                self.history.append(("agent", greet_text))
+                await self._speak(greet_text)
             else:
                 print(f"[AI-AGENT] starting conversational mode (mode={self.mode})")
                 await self._respond(None)
