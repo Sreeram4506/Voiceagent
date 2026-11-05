@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f7;color:#1d1d1f;min-height:100vh;-webkit-font-smoothing:antialiased;display:flex}
+
+.sidebar{width:220px;background:rgba(255,255,255,0.82);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-right:1px solid rgba(0,0,0,0.06);position:fixed;top:0;left:0;bottom:0;z-index:60;display:flex;flex-direction:column;padding:20px 0}
+.sidebar-brand{padding:0 20px 24px;font-size:19px;font-weight:700;letter-spacing:-0.03em;color:#1d1d1f}
+.sidebar-brand span{color:#0071e3}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:0 10px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font-size:14px;font-weight:500;color:#636366;text-decoration:none;transition:all 0.15s;cursor:pointer;letter-spacing:-0.01em}
+.nav-item:hover{background:rgba(0,0,0,0.04);color:#1d1d1f}
+.nav-item.active{background:rgba(0,113,227,0.1);color:#0071e3}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:0.7}
+.nav-item.active svg{opacity:1}
+.sidebar-footer{padding:16px 20px;border-top:1px solid rgba(0,0,0,0.06);font-size:12px;color:#86868b}
+
+.main{margin-left:220px;flex:1;min-height:100vh}
+.topbar{height:52px;background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:40}
+.topbar h2{font-size:17px;font-weight:600;letter-spacing:-0.02em}
+.topbar-right{display:flex;align-items:center;gap:16px}
+.auto-refresh{display:flex;align-items:center;gap:6px;font-size:13px;color:#86868b}
+.auto-refresh input{width:16px;height:16px;accent-color:#0071e3;cursor:pointer}
+
+.content{padding:28px 32px 60px;max-width:1100px}
+
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:28px}
+.stat-card{background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-radius:16px;padding:20px;border:1px solid rgba(0,0,0,0.04);box-shadow:0 1px 3px rgba(0,0,0,0.04);transition:transform 0.24s ease,box-shadow 0.24s ease}
+.stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.06)}
+.stat-card .label{font-size:11px;font-weight:500;color:#86868b;text-transform:uppercase;letter-spacing:0.06em}
+.stat-card .value{font-size:32px;font-weight:700;margin-top:6px;letter-spacing:-0.03em;line-height:1}
+.stat-card .value.blue{color:#0071e3}.stat-card .value.green{color:#34c759}.stat-card .value.yellow{color:#ff9f0a}.stat-card .value.red{color:#ff3b30}
+
+.quick-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
+.action-card{background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-radius:16px;padding:24px;border:1px solid rgba(0,0,0,0.04);box-shadow:0 1px 3px rgba(0,0,0,0.04);cursor:pointer;transition:all 0.24s ease;text-decoration:none;color:#1d1d1f}
+.action-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,0.08)}
+.action-card h3{font-size:16px;font-weight:600;letter-spacing:-0.02em;margin-bottom:6px}
+.action-card p{font-size:13px;color:#86868b;line-height:1.5}
+.action-card .card-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.card-icon.blue{background:rgba(0,113,227,0.1);color:#0071e3}
+.card-icon.green{background:rgba(52,199,89,0.12);color:#34c759}
+.card-icon.purple{background:rgba(175,82,222,0.12);color:#af52de}
+
+.section{background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-radius:16px;border:1px solid rgba(0,0,0,0.04);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:24px}
+.section-header{padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.section-header h3{font-size:15px;font-weight:600;letter-spacing:-0.01em}
+.section-meta{font-size:13px;color:#86868b}
+.see-all{font-size:13px;font-weight:500;color:#0071e3;text-decoration:none;transition:opacity 0.2s}
+.see-all:hover{opacity:0.72}
+
+table{width:100%;border-collapse:collapse}
+thead{border-bottom:1px solid rgba(0,0,0,0.06)}
+th{padding:10px 16px;text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:#86868b;background:rgba(0,0,0,0.015)}
+td{padding:12px 16px;font-size:14px;color:#1d1d1f;border-top:1px solid rgba(0,0,0,0.04)}
+tr{transition:background 0.15s}
+tr:hover td{background:rgba(0,0,0,0.015)}
+
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:980px;font-size:12px;font-weight:500}
+.badge-new{background:rgba(0,113,227,0.1);color:#0071e3}
+.badge-calling{background:rgba(255,159,10,0.12);color:#c77d08}
+.badge-done{background:rgba(52,199,89,0.12);color:#248a3d}
+.badge-completed{background:rgba(52,199,89,0.12);color:#248a3d}
+.badge-failed{background:rgba(255,59,48,0.1);color:#ff3b30}
+.badge-dialing{background:rgba(255,159,10,0.12);color:#c77d08}
+.badge-connected{background:rgba(0,113,227,0.1);color:#0071e3}
+.badge-refused{background:rgba(255,59,48,0.1);color:#ff3b30}
+.badge-no_answer{background:rgba(255,59,48,0.1);color:#ff3b30}
+
+.empty{padding:40px;text-align:center;color:#86868b;font-size:14px}
+
+.toast{position:fixed;bottom:28px;right:28px;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:500;font-family:inherit;z-index:100;transition:all 0.3s ease;opacity:0;transform:translateY(8px);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast-success{background:rgba(52,199,89,0.92);color:#fff;box-shadow:0 4px 16px rgba(52,199,89,0.3)}
+.toast-error{background:rgba(255,59,48,0.92);color:#fff;box-shadow:0 4px 16px rgba(255,59,48,0.3)}
+
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main{margin-left:0}
+  .topbar{padding:0 16px}
+  .content{padding:20px 16px 40px}
+  .stats{grid-template-columns:repeat(3,1fr);gap:8px}
+  .stat-card{padding:14px}
+  .stat-card .value{font-size:24px}
+  .quick-actions{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sidebar-brand">Voice<span>Agent</span></div>
+  <div class="sidebar-nav">
+    <a href="/dashboard/" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Overview
+    </a>
+    <a href="/dashboard/single" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.11 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Single Call
+    </a>
+    <a href="/dashboard/campaign" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Campaign
+    </a>
+    <a href="/dashboard/ai-agent" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M6 10v1a6 6 0 0012 0v-1"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+      AI Agent
+    </a>    <a href="/dashboard/voice-tuning" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      Voice Tuning
+    </a>
+ class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Call History
+    </a>
+  </div>
+  <div class="sidebar-footer">Auto-refresh active</div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <h2>Overview</h2>
+    <div class="topbar-right">
+      <div class="auto-refresh">
+        <input type="checkbox" id="autoRefresh" checked>
+        <label for="autoRefresh">Live</label>
+      </div>
+    </div>
+  </div>
+  <div class="content">
+    <div class="stats" id="stats"></div>
+
+    <div class="quick-actions">
+      <a href="/dashboard/single" class="action-card">
+        <div class="card-icon blue">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.11 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+        </div>
+        <h3>Single Call</h3>
+        <p>Call one number with the campaign audio. Add contacts manually.</p>
+      </a>
+      <a href="/dashboard/campaign" class="action-card">
+        <div class="card-icon green">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        </div>
+        <h3>Campaign</h3>
+        <p>Upload Excel, manage leads, and auto-call hundreds in parallel.</p>
+      </a>
+    <a href="/dashboard/ai-agent" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M6 10v1a6 6 0 0012 0v-1"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+      AI Agent
+    </a>
+      <a href="/dashboard/history" class="action-card">
+        <div class="card-icon purple">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3>Call History</h3>
+        <p>View all calls with status, duration, outcome, and transcripts.</p>
+      </a>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h3>Recent Calls</h3>
+    <a href="/dashboard/ai-agent" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M6 10v1a6 6 0 0012 0v-1"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+      AI Agent
+    </a>
+        <a href="/dashboard/history" class="see-all">See all</a>
+      </div>
+      <div id="recentCalls"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/dashboard/api';
+let refreshTimer;
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast toast-${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+function badge(s) { return `<span class="badge badge-${s}">${s}</span>`; }
+
+async function loadStats() {
+  const r = await fetch(`${API}/stats`);
+  const s = await r.json();
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Leads</div><div class="value blue">${s.total_leads}</div></div>
+    <div class="stat-card"><div class="label">Pending</div><div class="value yellow">${s.new_leads}</div></div>
+    <div class="stat-card"><div class="label">Calling</div><div class="value blue">${s.calling}</div></div>
+    <div class="stat-card"><div class="label">Completed</div><div class="value green">${s.done}</div></div>
+    <div class="stat-card"><div class="label">Failed</div><div class="value red">${s.failed}</div></div>
+    <div class="stat-card"><div class="label">Total Calls</div><div class="value blue">${s.total_calls}</div></div>`;
+}
+
+async function loadRecentCalls() {
+  const r = await fetch(`${API}/calls`);
+  const calls = await r.json();
+  const recent = calls.slice(0, 8);
+  if (!recent.length) { document.getElementById('recentCalls').innerHTML = '<div class="empty">No calls yet.</div>'; return; }
+  let html = '<table><thead><tr><th>Phone</th><th>Name</th><th>Status</th><th>Outcome</th><th>Duration</th><th>Time</th></tr></thead><tbody>';
+  for (const c of recent) {
+    const started = c.started ? new Date(c.started).toLocaleString() : '—';
+    html += `<tr><td>${c.phone}</td><td>${c.name||'—'}</td><td>${badge(c.status)}</td><td>${c.outcome}</td><td>${c.duration}s</td><td style="font-size:13px;color:#86868b">${started}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('recentCalls').innerHTML = html;
+}
+
+async function refresh() { await Promise.all([loadStats(), loadRecentCalls()]); }
+
+document.getElementById('autoRefresh').addEventListener('change', e => {
+  if (e.target.checked) refreshTimer = setInterval(refresh, 5000);
+  else clearInterval(refreshTimer);
+});
+refresh();
+refreshTimer = setInterval(refresh, 5000);
+</script>
+</body>
+</html>

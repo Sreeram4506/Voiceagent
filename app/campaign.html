@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Campaign — VoiceAgent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f7;color:#1d1d1f;min-height:100vh;-webkit-font-smoothing:antialiased;display:flex}
+
+.sidebar{width:220px;background:rgba(255,255,255,0.82);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-right:1px solid rgba(0,0,0,0.06);position:fixed;top:0;left:0;bottom:0;z-index:60;display:flex;flex-direction:column;padding:20px 0}
+.sidebar-brand{padding:0 20px 24px;font-size:19px;font-weight:700;letter-spacing:-0.03em;color:#1d1d1f}
+.sidebar-brand span{color:#0071e3}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:0 10px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font-size:14px;font-weight:500;color:#636366;text-decoration:none;transition:all 0.15s;cursor:pointer;letter-spacing:-0.01em}
+.nav-item:hover{background:rgba(0,0,0,0.04);color:#1d1d1f}
+.nav-item.active{background:rgba(0,113,227,0.1);color:#0071e3}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:0.7}
+.nav-item.active svg{opacity:1}
+.sidebar-footer{padding:16px 20px;border-top:1px solid rgba(0,0,0,0.06);font-size:12px;color:#86868b}
+
+.main{margin-left:220px;flex:1;min-height:100vh}
+.topbar{height:52px;background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:40}
+.topbar h2{font-size:17px;font-weight:600;letter-spacing:-0.02em}
+.topbar-actions{display:flex;gap:10px;align-items:center}
+
+.content{padding:28px 32px 60px;max-width:1200px}
+
+.glass{background:rgba(255,255,255,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-radius:16px;border:1px solid rgba(0,0,0,0.04);box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+
+.btn{height:38px;padding:0 18px;border:none;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;gap:7px;letter-spacing:-0.01em}
+.btn-primary{background:#0071e3;color:#fff}
+.btn-primary:hover{background:#0077ED}
+.btn-primary:active{transform:scale(0.97)}
+.btn-secondary{background:rgba(0,0,0,0.05);color:#1d1d1f}
+.btn-secondary:hover{background:rgba(0,0,0,0.08)}
+.btn-danger{background:rgba(255,59,48,0.1);color:#ff3b30}
+.btn-danger:hover{background:rgba(255,59,48,0.16)}
+.btn-success{background:#34c759;color:#fff}
+.btn-success:hover{background:#2db84e}
+.btn-stop{background:#ff3b30;color:#fff}
+.btn-stop:hover{background:#e5352b}
+.btn:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+
+.stats-row{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:20px}
+.mini-stat{padding:14px 16px;text-align:center}
+.mini-stat .label{font-size:11px;font-weight:500;color:#86868b;text-transform:uppercase;letter-spacing:0.05em}
+.mini-stat .val{font-size:24px;font-weight:700;margin-top:4px;letter-spacing:-0.03em}
+.mini-stat .val.blue{color:#0071e3}.mini-stat .val.green{color:#34c759}.mini-stat .val.yellow{color:#ff9f0a}.mini-stat .val.red{color:#ff3b30}
+
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.toolbar input[type="file"]{display:none}
+.toolbar .upload-label{height:38px;padding:0 18px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:7px;background:rgba(0,0,0,0.05);color:#1d1d1f;transition:all 0.2s}
+.toolbar .upload-label:hover{background:rgba(0,0,0,0.08)}
+.auto-status{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-left:auto;padding:6px 14px;border-radius:980px}
+.auto-status.active{background:rgba(52,199,89,0.1);color:#34c759}
+.auto-status.idle{background:rgba(0,0,0,0.04);color:#86868b}
+.pulse{width:8px;height:8px;border-radius:50%;background:#34c759;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+.bulk-bar{display:none;align-items:center;gap:10px;padding:10px 16px;background:rgba(0,113,227,0.06);border-bottom:1px solid rgba(0,113,227,0.1);font-size:13px;font-weight:500;color:#0071e3}
+.bulk-bar.show{display:flex}
+.bulk-bar .count{font-weight:700}
+
+table{width:100%;border-collapse:collapse}
+thead{border-bottom:1px solid rgba(0,0,0,0.06)}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:#86868b;background:rgba(0,0,0,0.015)}
+td{padding:10px 14px;font-size:14px;color:#1d1d1f;border-top:1px solid rgba(0,0,0,0.04)}
+tr{transition:background 0.15s}
+tr:hover td{background:rgba(0,0,0,0.015)}
+th:first-child,td:first-child{width:32px}
+input[type="checkbox"]{width:16px;height:16px;accent-color:#0071e3;cursor:pointer}
+
+.editable{cursor:text;padding:2px 6px;border-radius:6px;transition:background 0.2s}
+.editable:hover{background:rgba(0,0,0,0.04)}
+.editable input{border:1px solid #0071e3;border-radius:6px;padding:2px 6px;font-size:14px;font-family:inherit;outline:none;width:100%;background:#fff}
+
+.status-select{border:none;background:transparent;font-size:12px;font-weight:500;font-family:inherit;cursor:pointer;padding:3px 6px;border-radius:6px;outline:none}
+.status-select:hover{background:rgba(0,0,0,0.04)}
+
+.actions-cell{display:flex;gap:4px;align-items:center}
+.icon-btn{width:30px;height:30px;border:none;background:transparent;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;color:#86868b}
+.icon-btn:hover{background:rgba(0,0,0,0.06);color:#1d1d1f}
+.icon-btn.danger:hover{background:rgba(255,59,48,0.1);color:#ff3b30}
+
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:980px;font-size:12px;font-weight:500}
+.badge-new{background:rgba(0,113,227,0.1);color:#0071e3}
+.badge-calling{background:rgba(255,159,10,0.12);color:#c77d08}
+.badge-done{background:rgba(52,199,89,0.12);color:#248a3d}
+.badge-failed{background:rgba(255,59,48,0.1);color:#ff3b30}
+
+.empty{padding:40px;text-align:center;color:#86868b;font-size:14px}
+
+.toast{position:fixed;bottom:28px;right:28px;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:500;font-family:inherit;z-index:100;transition:all 0.3s ease;opacity:0;transform:translateY(8px)}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast-success{background:rgba(52,199,89,0.92);color:#fff;box-shadow:0 4px 16px rgba(52,199,89,0.3)}
+.toast-error{background:rgba(255,59,48,0.92);color:#fff;box-shadow:0 4px 16px rgba(255,59,48,0.3)}
+
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main{margin-left:0}
+  .topbar{padding:0 16px}
+  .content{padding:20px 16px 40px}
+  .stats-row{grid-template-columns:repeat(3,1fr);gap:6px}
+  .mini-stat .val{font-size:20px}
+  .toolbar{flex-direction:column;align-items:stretch}
+  .auto-status{margin-left:0;justify-content:center}
+}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sidebar-brand">Voice<span>Agent</span></div>
+  <div class="sidebar-nav">
+    <a href="/dashboard/" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Overview
+    </a>
+    <a href="/dashboard/single" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.11 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Single Call
+    </a>
+    <a href="/dashboard/campaign" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Campaign
+    </a>
+    <a href="/dashboard/ai-agent" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M6 10v1a6 6 0 0012 0v-1"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+      AI Agent
+    </a>    <a href="/dashboard/voice-tuning" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      Voice Tuning
+    </a>
+ class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Call History
+    </a>
+  </div>
+  <div class="sidebar-footer">VoiceAgent v1.0</div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <h2>Campaign</h2>
+    <div class="topbar-actions">
+      <div class="auto-status idle" id="autoStatus"><span>Idle</span></div>
+    </div>
+  </div>
+  <div class="content">
+
+    <div class="stats-row" id="stats">
+      <div class="glass mini-stat"><div class="label">Total</div><div class="val blue" id="sTot">0</div></div>
+      <div class="glass mini-stat"><div class="label">Pending</div><div class="val yellow" id="sNew">0</div></div>
+      <div class="glass mini-stat"><div class="label">Calling</div><div class="val blue" id="sCalling">0</div></div>
+      <div class="glass mini-stat"><div class="label">Done</div><div class="val green" id="sDone">0</div></div>
+      <div class="glass mini-stat"><div class="label">Failed</div><div class="val red" id="sFailed">0</div></div>
+      <div class="glass mini-stat"><div class="label">Answered</div><div class="val green" id="sAnswered">0</div></div>
+      <div class="glass mini-stat"><div class="label">Unanswered / Busy</div><div class="val yellow" id="sUnanswered">0</div></div>
+    </div>
+
+    <div class="toolbar">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="uploadFile()">
+      <label for="fileInput" class="upload-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload Excel
+      </label>
+      <button class="btn btn-success" id="startBtn" onclick="startAuto()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Start Auto-Call
+      </button>
+      <button class="btn btn-stop" id="stopBtn" onclick="stopAuto()" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        Stop
+      </button>
+      <button class="btn btn-secondary" onclick="resetLeads()">Reset All to New</button>
+    </div>
+
+    <div class="glass" style="overflow:hidden">
+      <div class="bulk-bar" id="bulkBar">
+        <span><span class="count" id="selCount">0</span> selected</span>
+        <button class="btn btn-secondary" style="height:30px;padding:0 12px;font-size:12px" onclick="bulkSetStatus('new')">Set New</button>
+        <button class="btn btn-secondary" style="height:30px;padding:0 12px;font-size:12px" onclick="bulkSetStatus('done')">Set Done</button>
+        <button class="btn btn-danger" style="height:30px;padding:0 12px;font-size:12px" onclick="bulkDelete()">Delete</button>
+        <button class="btn btn-secondary" style="height:30px;padding:0 12px;font-size:12px" onclick="clearSelection()">Clear</button>
+      </div>
+      <div id="leadsTable"></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/dashboard/api';
+let leads = [], selected = new Set(), autoRunning = false, refreshTimer;
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast toast-${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function loadStats() {
+  const r = await fetch(`${API}/stats`);
+  const s = await r.json();
+  document.getElementById('sTot').textContent = s.total_leads;
+  document.getElementById('sNew').textContent = s.new_leads;
+  document.getElementById('sCalling').textContent = s.calling;
+  document.getElementById('sDone').textContent = s.done;
+  document.getElementById('sFailed').textContent = s.failed;
+  document.getElementById('sAnswered').textContent = s.completed_calls || 0;
+  document.getElementById('sUnanswered').textContent = s.unanswered_busy || 0;
+}
+
+async function loadLeads() {
+  const r = await fetch(`${API}/leads`);
+  leads = await r.json();
+  renderLeads();
+}
+
+function renderLeads() {
+  if (!leads.length) { document.getElementById('leadsTable').innerHTML = '<div class="empty">No leads yet. Upload an Excel file or add leads manually.</div>'; return; }
+  const allChecked = leads.every(l => selected.has(l.id));
+  let html = `<table><thead><tr>
+    <th><input type="checkbox" ${allChecked?'checked':''} onchange="toggleAll(this.checked)"></th>
+    <th>#</th><th>Name</th><th>Phone</th><th>Status</th><th>Attempts</th><th style="width:100px">Actions</th>
+  </tr></thead><tbody>`;
+  for (let i = 0; i < leads.length; i++) {
+    const l = leads[i];
+    const checked = selected.has(l.id) ? 'checked' : '';
+    html += `<tr data-id="${l.id}">
+      <td><input type="checkbox" ${checked} onchange="toggleSel(${l.id},this.checked)"></td>
+      <td style="color:#86868b;font-size:13px">${i+1}</td>
+      <td><span class="editable" ondblclick="editField(this,${l.id},'name')">${l.name||'—'}</span></td>
+      <td><span class="editable" ondblclick="editField(this,${l.id},'phone')">${l.phone}</span></td>
+      <td>
+        <select class="status-select" onchange="updateLeadStatus(${l.id},this.value)" style="color:${statusColor(l.status)}">
+          <option value="new" ${l.status==='new'?'selected':''}>New</option>
+          <option value="calling" ${l.status==='calling'?'selected':''}>Calling</option>
+          <option value="done" ${l.status==='done'?'selected':''}>Done</option>
+          <option value="failed" ${l.status==='failed'?'selected':''}>Failed</option>
+        </select>
+      </td>
+      <td style="text-align:center;color:#86868b">${l.attempts||0}</td>
+      <td>
+        <div class="actions-cell">
+          <button class="icon-btn" title="Call" onclick="callLead(${l.id})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.11 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg></button>
+          <button class="icon-btn" title="Move up" onclick="moveLead(${l.id},'up')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+          <button class="icon-btn" title="Move down" onclick="moveLead(${l.id},'down')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button class="icon-btn danger" title="Delete" onclick="deleteLead(${l.id})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+        </div>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('leadsTable').innerHTML = html;
+  updateBulkBar();
+}
+
+function statusColor(s) {
+  return s==='new'?'#0071e3':s==='calling'?'#ff9f0a':s==='done'?'#34c759':'#ff3b30';
+}
+
+function toggleAll(checked) { leads.forEach(l => { if(checked) selected.add(l.id); else selected.delete(l.id); }); renderLeads(); }
+function toggleSel(id, checked) { if(checked) selected.add(id); else selected.delete(id); updateBulkBar(); }
+function clearSelection() { selected.clear(); renderLeads(); }
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  if (selected.size) { bar.classList.add('show'); document.getElementById('selCount').textContent = selected.size; }
+  else bar.classList.remove('show');
+}
+
+function editField(el, id, field) {
+  const current = el.textContent === '—' ? '' : el.textContent;
+  el.innerHTML = `<input type="text" value="${current}" onblur="saveField(this,${id},'${field}')" onkeydown="if(event.key==='Enter')this.blur()">`;
+  el.querySelector('input').focus();
+}
+async function saveField(input, id, field) {
+  const val = input.value.trim();
+  try {
+    await fetch(`${API}/lead/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ [field]: val }) });
+    loadLeads();
+  } catch(e) { showToast('Failed to save', 'error'); }
+}
+
+async function updateLeadStatus(id, status) {
+  await fetch(`${API}/lead/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ status }) });
+  loadLeads(); loadStats();
+}
+
+async function callLead(id) {
+  try {
+    const r = await fetch(`${API}/recall/${id}`, { method: 'POST' });
+    const d = await r.json();
+    if (d.error) showToast(d.error, 'error');
+    else showToast('Call placed');
+    loadLeads(); loadStats();
+  } catch(e) { showToast('Call failed', 'error'); }
+}
+
+async function moveLead(id, dir) {
+  await fetch(`${API}/lead/${id}/move`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ direction: dir }) });
+  loadLeads();
+}
+
+async function deleteLead(id) {
+  await fetch(`${API}/lead/${id}`, { method: 'DELETE' });
+  selected.delete(id);
+  loadLeads(); loadStats();
+  showToast('Lead deleted');
+}
+
+async function bulkSetStatus(status) {
+  const ids = [...selected];
+  for (const id of ids) await fetch(`${API}/lead/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ status }) });
+  selected.clear();
+  loadLeads(); loadStats();
+  showToast(`${ids.length} leads updated`);
+}
+
+async function bulkDelete() {
+  const ids = [...selected];
+  await fetch(`${API}/leads/bulk`, { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids }) });
+  selected.clear();
+  loadLeads(); loadStats();
+  showToast(`${ids.length} leads deleted`);
+}
+
+async function uploadFile() {
+  const f = document.getElementById('fileInput').files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    const r = await fetch(`${API}/upload`, { method: 'POST', body: fd });
+    const d = await r.json();
+    showToast(`Uploaded ${d.added} leads`);
+    loadLeads(); loadStats();
+  } catch(e) { showToast('Upload failed', 'error'); }
+  document.getElementById('fileInput').value = '';
+}
+
+async function startAuto() {
+  const r = await fetch(`${API}/autocall/start`, { method: 'POST' });
+  const d = await r.json();
+  autoRunning = true;
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('autoStatus').className = 'auto-status active';
+  document.getElementById('autoStatus').innerHTML = '<div class="pulse"></div> Auto-Calling';
+  showToast(d.status || 'Auto-call started');
+}
+
+async function stopAuto() {
+  await fetch(`${API}/autocall/stop`, { method: 'POST' });
+  autoRunning = false;
+  document.getElementById('startBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('autoStatus').className = 'auto-status idle';
+  document.getElementById('autoStatus').innerHTML = '<span>Idle</span>';
+  showToast('Auto-call stopped');
+}
+
+async function resetLeads() {
+  await fetch(`${API}/reset`, { method: 'POST' });
+  loadLeads(); loadStats();
+  showToast('All leads reset to New');
+}
+
+async function checkAutoStatus() {
+  try {
+    const r = await fetch(`${API}/autocall/status`);
+    const d = await r.json();
+    if (d.active && !autoRunning) {
+      autoRunning = true;
+      document.getElementById('startBtn').style.display = 'none';
+      document.getElementById('stopBtn').style.display = '';
+      document.getElementById('autoStatus').className = 'auto-status active';
+      document.getElementById('autoStatus').innerHTML = '<div class="pulse"></div> Auto-Calling';
+    }
+  } catch(e) {}
+}
+
+async function refresh() { await Promise.all([loadStats(), loadLeads(), checkAutoStatus()]); }
+refresh();
+refreshTimer = setInterval(refresh, 5000);
+</script>
+</body>
+</html>

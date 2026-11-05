@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SUMA AI — Voice Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={darkMode:"class",theme:{extend:{colors:{primary:"#3525cd","primary-container":"#e8e6ff","on-primary":"#fff","on-primary-container":"#1b0587",secondary:"#00687a","secondary-container":"#b2eaf4","on-secondary":"#fff","on-secondary-container":"#001f26",tertiary:"#005338","tertiary-container":"#89f8c3","on-tertiary":"#fff","on-tertiary-container":"#002113",surface:"#fafbff","surface-variant":"#e4e1f5","surface-container-lowest":"#ffffff","surface-container-low":"#f3f2fc","surface-container":"#edeafc","surface-container-high":"#e3e0f5","surface-container-highest":"#d8d5ef","on-surface":"#1b1a23","on-surface-variant":"#46454f",outline:"#79767d","outline-variant":"#c8c5d0",error:"#ba1a1a","error-container":"#ffdad6"},fontFamily:{sans:["Inter","sans-serif"]},borderRadius:{DEFAULT:"0.375rem",sm:"0.25rem",md:"0.5rem",lg:"0.75rem",xl:"1rem","2xl":"1.25rem","full":"9999px"},boxShadow:{card:"0 2px 12px rgba(53,37,205,0.06),0 1px 3px rgba(0,0,0,0.04)",hover:"0 8px 24px rgba(53,37,205,0.12),0 2px 6px rgba(0,0,0,0.06)",modal:"0 24px 64px rgba(0,0,0,0.18)"},backdropBlur:{glass:"16px"}}}};
+</script>
+<style>
+*,:after,:before{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{overscroll-behavior:none}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c8c5d0;border-radius:3px}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 450,'GRAD' 0,'opsz' 20;font-size:18px;line-height:1;vertical-align:middle}
+.icon-sm{font-size:16px}
+.icon-lg{font-size:22px}
+.hidden{display:none!important}
+.glass{backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);background:rgba(255,255,255,0.7)}
+.toast{position:fixed;bottom:24px;right:24px;z-index:200;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;max-width:320px}
+.toast.show{opacity:1;transform:none}
+.modal-bg{position:fixed;inset:0;background:rgba(27,26,35,.5);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.nav-link{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#46454f;cursor:pointer;text-decoration:none;transition:all .15s;white-space:nowrap}
+.nav-link:hover{background:#e8e6ff;color:#1b0587}
+.nav-link.active{background:#3525cd;color:#fff}
+.nav-link.active .material-symbols-outlined{color:#fff}
+.kpi-card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 2px 12px rgba(53,37,205,0.06),0 1px 3px rgba(0,0,0,0.04);transition:box-shadow .2s}
+.kpi-card:hover{box-shadow:0 8px 24px rgba(53,37,205,0.12)}
+.btn-primary{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:#3525cd;color:#fff;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-primary:hover{background:#2a1db5;transform:translateY(-1px)}
+.btn-primary:active{transform:none}
+.btn-secondary{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:#e8e6ff;color:#3525cd;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-secondary:hover{background:#d8d5ff}
+.btn-ghost{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:transparent;color:#46454f;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid #c8c5d0;transition:all .15s}
+.btn-ghost:hover{background:#f3f2fc;border-color:#3525cd;color:#3525cd}
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.03em}
+.badge-green{background:#dcfce7;color:#166534}
+.badge-blue{background:#dbeafe;color:#1d4ed8}
+.badge-orange{background:#fed7aa;color:#9a3412}
+.badge-red{background:#fecaca;color:#991b1b}
+.badge-gray{background:#f1f5f9;color:#475569}
+.badge-purple{background:#ede9fe;color:#6d28d9}
+.input{width:100%;padding:9px 12px;border:1px solid #c8c5d0;border-radius:8px;font-size:13px;background:#fff;color:#1b1a23;outline:none;transition:border-color .15s}
+.input:focus{border-color:#3525cd;box-shadow:0 0 0 3px rgba(53,37,205,.1)}
+.textarea{width:100%;padding:10px 12px;border:1px solid #c8c5d0;border-radius:8px;font-size:13px;background:#fff;color:#1b1a23;outline:none;resize:vertical;transition:border-color .15s;font-family:inherit}
+.textarea:focus{border-color:#3525cd;box-shadow:0 0 0 3px rgba(53,37,205,.1)}
+.select{width:100%;padding:9px 12px;border:1px solid #c8c5d0;border-radius:8px;font-size:13px;background:#fff;color:#1b1a23;outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2346454f'%3e%3cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 10px center;background-size:16px}
+.select:focus{border-color:#3525cd;box-shadow:0 0 0 3px rgba(53,37,205,.1)}
+.table{width:100%;border-collapse:separate;border-spacing:0}
+.table th{padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:#79767d;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #e4e1f5}
+.table td{padding:12px 14px;font-size:13px;border-bottom:1px solid #f3f2fc}
+.table tbody tr:last-child td{border-bottom:none}
+.table tbody tr:hover td{background:#fafbff}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:500;border:1px solid #e4e1f5;background:#f3f2fc;cursor:pointer;transition:all .15s}
+.chip:hover,.chip.selected{background:#3525cd;color:#fff;border-color:#3525cd}
+.wizard-step{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:#79767d;cursor:pointer}
+.wizard-step.done .step-num{background:#005338;color:#fff}
+.wizard-step.active .step-num{background:#3525cd;color:#fff}
+.step-num{width:24px;height:24px;border-radius:50%;border:2px solid #c8c5d0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;transition:all .2s}
+.call-card{background:#fff;border-radius:16px;padding:16px;border:1px solid #e4e1f5;transition:all .2s;cursor:pointer}
+.call-card:hover{border-color:#3525cd;box-shadow:0 4px 20px rgba(53,37,205,0.1)}
+.call-card.selected{border-color:#3525cd;box-shadow:0 0 0 2px rgba(53,37,205,.2)}
+.pulse-ring{width:8px;height:8px;border-radius:50%;position:relative;display:inline-block}
+.pulse-ring::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid;animation:pulse-ring 1.5s ease infinite;opacity:0}
+@keyframes pulse-ring{0%{transform:scale(.6);opacity:.8}100%{transform:scale(1.8);opacity:0}}
+.pulse-green{background:#22c55e}.pulse-green::after{border-color:#22c55e}
+.pulse-blue{background:#3b82f6}.pulse-blue::after{border-color:#3b82f6}
+.pulse-orange{background:#f97316}.pulse-orange::after{border-color:#f97316}
+.pulse-gray{background:#94a3b8}
+.bar-chart-bar{transition:height .5s cubic-bezier(.4,0,.2,1)}
+.donut-seg{transition:stroke-dashoffset .6s cubic-bezier(.4,0,.2,1)}
+.sidebar-section-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#79767d;padding:12px 12px 4px}
+.range-track{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:#e4e1f5;outline:none}
+.range-track::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#3525cd;cursor:pointer;box-shadow:0 2px 6px rgba(53,37,205,.3)}
+</style>
+</head>
+<body class="bg-surface font-sans text-on-surface">
+
+<!-- SIDEBAR -->
+<aside id="sidebar" class="fixed left-0 top-0 h-screen w-60 bg-white border-r border-surface-container-high z-50 flex flex-col overflow-hidden">
+  <div class="h-14 px-4 flex items-center gap-3 border-b border-surface-container-high">
+    <div class="h-8 w-8 rounded-xl bg-primary flex items-center justify-center">
+      <span class="material-symbols-outlined text-white icon-sm" style="font-size:16px">record_voice_over</span>
+    </div>
+    <div>
+      <div class="text-[14px] font-bold text-on-surface tracking-tight">SUMA AI</div>
+      <div class="text-[10px] text-on-surface-variant font-medium tracking-widest uppercase">Voice Engine</div>
+    </div>
+  </div>
+  <div class="flex-1 overflow-y-auto py-2 px-2">
+    <nav id="nav" class="flex flex-col gap-0.5"></nav>
+  </div>
+  <div class="border-t border-surface-container-high p-3">
+    <div class="flex items-center gap-2">
+      <div id="userAvatar" class="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center text-[11px] font-bold text-primary">?</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[12px] font-semibold truncate" id="userName">Loading…</div>
+        <div class="text-[11px] text-on-surface-variant truncate" id="tenantName">—</div>
+      </div>
+      <button title="Sign out" onclick="doLogout()" class="p-1 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-error transition-colors">
+        <span class="material-symbols-outlined" style="font-size:16px">logout</span>
+      </button>
+    </div>
+  </div>
+</aside>
+
+<!-- HEADER -->
+<header class="fixed top-0 left-60 right-0 h-14 bg-white/80 backdrop-blur-sm border-b border-surface-container-high z-40 flex items-center justify-between px-5">
+  <div class="flex items-center gap-3">
+    <div class="text-[12px] text-on-surface-variant font-medium" id="crumbs">Dashboard</div>
+    <div class="relative ml-2">
+      <span class="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant" style="font-size:15px">search</span>
+      <input id="globalSearch" class="w-72 h-9 pl-9 pr-3 bg-surface-container-low rounded-xl text-[13px] border border-surface-container-high focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="Search…"/>
+      <div id="searchBox" class="hidden absolute top-11 left-0 w-72 bg-white rounded-xl shadow-modal border border-surface-container-high p-2 text-[13px] z-50 max-h-64 overflow-y-auto"></div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full text-[12px] font-semibold">
+      <span class="pulse-ring pulse-green"></span>
+      <span id="liveCount">0 Live</span>
+    </div>
+    <button onclick="go('live-calls')" class="px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-full flex items-center gap-1.5 hover:bg-primary/90 transition-colors">
+      <span class="material-symbols-outlined" style="font-size:14px">phone_in_talk</span> Monitor
+    </button>
+    <button id="notifBtn" class="relative p-2 rounded-xl hover:bg-surface-container-low transition-colors">
+      <span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+      <span id="notifDot" class="hidden absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span>
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="pl-60 pt-14 min-h-screen">
+  <div id="view" class="p-5"></div>
+</main>
+
+<div id="toast" class="toast"></div>
+<div id="modal" class="modal-bg hidden" onclick="closeModal(event)"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// AUTH CHECK — redirect to login if not authenticated
+// ═══════════════════════════════════════════════════════════
+(async function checkAuth() {
+  try {
+    const res = await fetch('/dashboard/api/auth/me', {credentials: 'same-origin'});
+    if (res.status === 401) {
+      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.hash);
+      return;
+    }
+    const me = await res.json();
+    // Populate sidebar user info
+    const initials = (me.name || me.email || '?')[0].toUpperCase();
+    const av = document.getElementById('userAvatar');
+    const un = document.getElementById('userName');
+    const tn = document.getElementById('tenantName');
+    if (av) av.textContent = initials;
+    if (un) un.textContent = me.name || me.email;
+    if (tn) tn.textContent = me.tenant_name || ('Tenant #' + me.tenant_id);
+    window._currentUser = me;
+  } catch(e) {
+    console.warn('Auth check failed:', e);
+  }
+})();
+
+async function doLogout() {
+  try {
+    await fetch('/dashboard/api/auth/logout', {method:'POST', credentials:'same-origin'});
+  } catch(e) {}
+  location.href = '/login';
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAVIGATION CONFIG
+// ═══════════════════════════════════════════════════════════
+const NAV = [
+  {label:"Operations",items:[
+    {id:"dashboard",icon:"grid_view",title:"Dashboard"},
+    {id:"live-calls",icon:"phone_in_talk",title:"Live Calls"},
+    {id:"appointments",icon:"calendar_month",title:"Appointments"},
+  ]},
+  {label:"Campaigns",items:[
+    {id:"all-campaigns",icon:"campaign",title:"All Campaigns"},
+    {id:"create-campaign",icon:"add_circle",title:"Create Campaign"},
+    {id:"contact-lists",icon:"contacts",title:"Contact Lists"},
+    {id:"call-history",icon:"history",title:"Call History"},
+  ]},
+  {label:"AI Studio",items:[
+    {id:"employees",icon:"groups",title:"Employees"},
+    {id:"agent-studio",icon:"record_voice_over",title:"Voice Agent Studio"},
+  ]},
+  {label:"Settings",items:[
+    {id:"team",icon:"badge",title:"Team"},
+    {id:"settings",icon:"settings",title:"Settings"},
+  ]},
+];
+
+// ═══════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const api = async (path, opts={}) => {
+  try {
+    const res = await fetch('/dashboard' + path, {credentials:'same-origin', headers:{'Content-Type':'application/json'}, ...opts});
+    if (res.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.hash); return {}; }
+    return await res.json();
+  } catch(e) { return {error: e.message}; }
+};
+const toast = (msg, ok=true) => {
+  const t = $('toast'); t.textContent = msg;
+  t.style.background = ok ? '#005338' : '#ba1a1a'; t.style.color = '#fff';
+  t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000);
+};
+const fmtDur = s => { s = Number(s||0); return Math.floor(s/60)+'m '+(s%60)+'s'; };
+const fmtTime = iso => { if(!iso) return '—'; const d = new Date(iso); return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); };
+const fmtDate = iso => { if(!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); };
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const statusColor = s => ({dialing:'badge-blue',connected:'badge-green',completed:'badge-gray',no_answer:'badge-orange',busy:'badge-orange',failed:'badge-red'}[s]||'badge-gray');
+const campaignColor = s => ({running:'badge-green',paused:'badge-orange',draft:'badge-gray',completed:'badge-blue',scheduled:'badge-purple'}[s]||'badge-gray');
+
+// ═══════════════════════════════════════════════════════════
+// ROUTING
+// ═══════════════════════════════════════════════════════════
+const route = () => location.hash.replace('#','') || 'dashboard';
+const go = r => { location.hash = r; };
+
+function buildNav() {
+  const nav = $('nav');
+  nav.innerHTML = NAV.map(section => `
+    <div class="sidebar-section-label">${section.label}</div>
+    ${section.items.map(item => `
+      <a href="#${item.id}" data-route="${item.id}" class="nav-link">
+        <span class="material-symbols-outlined">${item.icon}</span>
+        ${item.title}
+      </a>
+    `).join('')}
+  `).join('');
+}
+
+function setActiveNav(r) {
+  document.querySelectorAll('.nav-link').forEach(a => {
+    a.classList.toggle('active', a.dataset.route === r);
+  });
+  const titles = {dashboard:'Dashboard','live-calls':'Live Calls',appointments:'Appointments','all-campaigns':'All Campaigns','create-campaign':'Create Campaign','contact-lists':'Contact Lists','call-history':'Call History',employees:'Employees','agent-studio':'Voice Agent Studio',team:'Team & Permissions',settings:'Settings'};
+  $('crumbs').textContent = titles[r] || r;
+}
+
+function closeModal(e) {
+  if(e.target === $('modal')) { $('modal').classList.add('hidden'); $('modal').innerHTML = ''; }
+}
+
+function showModal(html) {
+  $('modal').innerHTML = `<div onclick="event.stopPropagation()">${html}</div>`;
+  $('modal').classList.remove('hidden');
+}
+
+function hideModal() { $('modal').classList.add('hidden'); $('modal').innerHTML = ''; }
+
+// ═══════════════════════════════════════════════════════════
+// DASHBOARD (Screen 1)
+// ═══════════════════════════════════════════════════════════
+async function renderDashboard() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading dashboard…</div>`;
+  const data = await api('/api/overview');
+  if(data.error) { $('view').innerHTML = `<div class="text-red-500 p-4">Error: ${esc(data.error)}</div>`; return; }
+
+  const k = data.kpis || {};
+  const trend = data.trend || [];
+  const hourly = data.hourly || [];
+  const outcomes = data.outcomes || {};
+  const campaigns = data.campaigns || [];
+  const pipeline = data.pipeline || {};
+
+  // Build bar chart
+  const maxBar = Math.max(...hourly, 1);
+  const hourlyBars = hourly.map((v,i) => `
+    <div class="flex flex-col items-center gap-1" style="width:14px">
+      <div class="w-2 rounded-sm bg-primary transition-all" style="height:${Math.round((v/maxBar)*56)}px;opacity:${v>0?1:0.15}"></div>
+      ${i%4===0?`<span class="text-[9px] text-on-surface-variant">${String(i).padStart(2,'0')}</span>`:''}
+    </div>
+  `).join('');
+
+  // Trend chart
+  const maxTrend = Math.max(...trend.map(d=>d.placed), 1);
+  const tW = 400, tH = 80;
+  const pts = trend.map((d,i) => `${Math.round(i*(tW/(trend.length-1)))},${Math.round(tH - (d.placed/maxTrend)*tH)}`).join(' ');
+  const area = trend.length>1 ? `M ${pts.split(' ')[0]} L ${pts.split(' ').slice(1).join(' L ')} L ${tW},${tH} L 0,${tH} Z` : '';
+
+  // Donut chart
+  const outcomeKeys = Object.keys(outcomes);
+  const total = Object.values(outcomes).reduce((a,b)=>a+b,0)||1;
+  const colors = ['#3525cd','#005338','#00687a','#f97316','#ef4444','#94a3b8'];
+  let cumPct = 0;
+  const slices = outcomeKeys.map((k2,i) => {
+    const pct = outcomes[k2]/total;
+    const startD = cumPct * 283; cumPct += pct;
+    const slice = `<circle cx="60" cy="60" r="45" fill="none" stroke="${colors[i%colors.length]}" stroke-width="22" stroke-dasharray="${Math.round(pct*283)} 283" stroke-dashoffset="${-startD}" transform="rotate(-90 60 60)"/>`;
+    return slice;
+  });
+
+  $('view').innerHTML = `
+    <div class="max-w-7xl mx-auto space-y-5">
+
+      <!-- Header Row -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-bold text-on-surface">Operations Dashboard</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">Real-time overview · <span id="lastUpdated" class="text-primary">Just updated</span></p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="pauseAll()" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">pause_circle</span> Pause All</button>
+          <button onclick="resumeAll()" class="btn-secondary text-[12px]"><span class="material-symbols-outlined icon-sm">play_circle</span> Resume All</button>
+          <button onclick="go('create-campaign')" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> New Campaign</button>
+        </div>
+      </div>
+
+      <!-- KPI Grid -->
+      <div class="grid grid-cols-6 gap-3">
+        ${[
+          {label:'Total Contacts',val:k.contacts??0,icon:'contacts',color:'text-primary',sub:'In pipeline'},
+          {label:'Calls Placed',val:k.calls_placed??0,icon:'call_made',color:'text-secondary',sub:'Total outbound'},
+          {label:'Calls Answered',val:k.answered??0,icon:'call',color:'text-tertiary',sub:`${k.answer_rate??0}% answer rate`},
+          {label:'Booked',val:k.booked??0,icon:'calendar_month',color:'text-orange-500',sub:`${k.cvr??0}% conversion`},
+          {label:'Avg Duration',val:fmtDur(k.avg_duration),icon:'timer',color:'text-purple-500',sub:'Per answered call'},
+          {label:'Live Now',val:`${k.concurrency??0}/${k.cap??200}`,icon:'phone_in_talk',color:'text-blue-500',sub:'Active channels'},
+        ].map(kpi => `
+          <div class="kpi-card">
+            <div class="flex items-start justify-between mb-3">
+              <span class="material-symbols-outlined ${kpi.color} icon-lg" style="font-size:22px">${kpi.icon}</span>
+              <span class="text-[10px] font-medium text-on-surface-variant bg-surface-container-low px-2 py-0.5 rounded-full">${kpi.sub}</span>
+            </div>
+            <div class="text-2xl font-bold text-on-surface tracking-tight">${esc(String(kpi.val))}</div>
+            <div class="text-[11px] text-on-surface-variant mt-0.5 font-medium">${kpi.label}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <!-- Call Volume Trend -->
+        <div class="col-span-2 bg-white rounded-2xl p-5 shadow-card">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="font-semibold text-on-surface">Call Volume Trend</h3>
+              <p class="text-[12px] text-on-surface-variant">Last 7 days</p>
+            </div>
+            <div class="flex gap-3 text-[11px] text-on-surface-variant">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary inline-block"></span> Placed</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-tertiary inline-block"></span> Answered</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-400 inline-block"></span> Booked</span>
+            </div>
+          </div>
+          <div class="relative">
+            <svg viewBox="0 0 400 80" class="w-full" style="height:80px">
+              <defs>
+                <linearGradient id="gPlaced" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#3525cd" stop-opacity="0.15"/>
+                  <stop offset="100%" stop-color="#3525cd" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              ${area ? `<path d="${area}" fill="url(#gPlaced)"/>` : ''}
+              ${trend.length>1 ? `<polyline points="${pts}" fill="none" stroke="#3525cd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+              ${trend.map((d,i)=>`<circle cx="${Math.round(i*(tW/(trend.length-1)))}" cy="${Math.round(tH-(d.placed/maxTrend)*tH)}" r="3" fill="#3525cd"/>`).join('')}
+            </svg>
+            <div class="flex justify-between mt-1">
+              ${trend.map(d=>`<span class="text-[10px] text-on-surface-variant">${d.label}</span>`).join('')}
+            </div>
+          </div>
+          <!-- Hourly Activity -->
+          <div class="mt-4 pt-4 border-t border-surface-container-high">
+            <div class="text-[11px] font-semibold text-on-surface-variant mb-2">Hourly Activity</div>
+            <div class="flex items-end gap-0.5" style="height:64px">${hourlyBars}</div>
+          </div>
+        </div>
+
+        <!-- Outcome Donut -->
+        <div class="bg-white rounded-2xl p-5 shadow-card">
+          <h3 class="font-semibold text-on-surface mb-1">Call Outcomes</h3>
+          <p class="text-[12px] text-on-surface-variant mb-4">Distribution</p>
+          <div class="flex justify-center mb-4">
+            <svg viewBox="0 0 120 120" width="120" height="120">
+              ${slices.join('')}
+              <text x="60" y="58" text-anchor="middle" font-size="18" font-weight="700" fill="#1b1a23">${total}</text>
+              <text x="60" y="72" text-anchor="middle" font-size="9" fill="#79767d">total</text>
+            </svg>
+          </div>
+          <div class="space-y-2">
+            ${outcomeKeys.slice(0,5).map((ok2,i) => `
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full" style="background:${colors[i%colors.length]}"></span>
+                  <span class="text-[12px] text-on-surface">${esc(ok2)}</span>
+                </div>
+                <span class="text-[12px] font-semibold">${outcomes[ok2]}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <!-- Campaigns Table -->
+        <div class="col-span-2 bg-white rounded-2xl shadow-card overflow-hidden">
+          <div class="px-5 py-4 border-b border-surface-container-high flex items-center justify-between">
+            <h3 class="font-semibold text-on-surface">Active Campaigns</h3>
+            <button onclick="go('all-campaigns')" class="text-[12px] text-primary font-semibold hover:underline">View all →</button>
+          </div>
+          <table class="table">
+            <thead><tr>
+              <th>Campaign</th><th>Status</th><th>Contacts</th><th>Booked</th><th>Progress</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${campaigns.length===0 ? `<tr><td colspan="6" class="text-center text-on-surface-variant py-8">No campaigns yet — <a href="#create-campaign" class="text-primary font-semibold">create one</a></td></tr>` :
+              campaigns.map(c => `
+              <tr>
+                <td>
+                  <div class="font-medium text-on-surface">${esc(c.name)}</div>
+                  <div class="text-[11px] text-on-surface-variant">${esc(c.code||'')} · ${esc(c.agent||'')}</div>
+                </td>
+                <td><span class="badge ${campaignColor(c.status)}">${c.status}</span></td>
+                <td class="font-medium">${c.contacts||0}</td>
+                <td class="font-medium text-tertiary">${c.booked||0}</td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 h-1.5 bg-surface-container-high rounded-full overflow-hidden" style="width:80px">
+                      <div class="h-full bg-primary rounded-full" style="width:${c.progress||0}%"></div>
+                    </div>
+                    <span class="text-[11px] text-on-surface-variant">${c.progress||0}%</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    ${c.status==='running'
+                      ? `<button onclick="pauseCampaign(${c.id})" class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-orange-500 transition-colors"><span class="material-symbols-outlined icon-sm">pause</span></button>`
+                      : `<button onclick="launchCampaign(${c.id})" class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-tertiary transition-colors"><span class="material-symbols-outlined icon-sm">play_arrow</span></button>`
+                    }
+                    <button onclick="go('all-campaigns')" class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors"><span class="material-symbols-outlined icon-sm">open_in_new</span></button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Right: Pipeline + Appointments -->
+        <div class="flex flex-col gap-4">
+          <!-- Pipeline Health -->
+          <div class="bg-white rounded-2xl p-5 shadow-card">
+            <h3 class="font-semibold text-on-surface mb-3">AI Pipeline Health</h3>
+            ${Object.entries(pipeline).map(([k2, p]) => `
+              <div class="flex items-center justify-between py-2 border-b border-surface-container-high last:border-0">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full ${p.ok?'bg-tertiary':'bg-error'}"></div>
+                  <span class="text-[12px] text-on-surface">${esc(p.label)}</span>
+                </div>
+                <span class="text-[11px] font-semibold text-on-surface-variant">${p.rtt_ms||p.ms||'—'}ms</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Next Appointment -->
+          <div class="bg-gradient-to-br from-primary to-indigo-700 rounded-2xl p-5 text-white">
+            <div class="flex items-center gap-2 mb-3 opacity-80">
+              <span class="material-symbols-outlined" style="font-size:16px">calendar_month</span>
+              <span class="text-[11px] font-semibold uppercase tracking-wider">Next Appointment</span>
+            </div>
+            ${data.next_appointment ? `
+              <div class="font-semibold text-[15px]">${esc(data.next_appointment.name||'Unknown')}</div>
+              <div class="text-[13px] opacity-80 mt-0.5">${esc(data.next_appointment.phone||'')}</div>
+              <div class="mt-3 flex items-center gap-2 text-[12px] opacity-90">
+                <span class="material-symbols-outlined icon-sm">schedule</span>
+                ${fmtDate(data.next_appointment.when)} · ${fmtTime(data.next_appointment.when)}
+              </div>
+              <div class="mt-2 text-[11px] opacity-70">${data.appointments_today||0} more today</div>
+            ` : `
+              <div class="text-[13px] opacity-70">No upcoming appointments</div>
+              <button onclick="go('appointments')" class="mt-2 text-[12px] font-semibold opacity-90 hover:opacity-100">View all →</button>
+            `}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // Poll live count
+  updateLiveCount();
+}
+
+async function pauseCampaign(id) {
+  const r = await api(`/api/campaigns/${id}/pause`, {method:'POST'});
+  if(!r.error) { toast('Campaign paused'); renderDashboard(); }
+}
+async function launchCampaign(id) {
+  const r = await api(`/api/campaigns/${id}/launch`, {method:'POST'});
+  if(!r.error) { toast('Campaign launched!'); renderDashboard(); }
+}
+async function pauseAll() {
+  const r = await api('/api/pause-all', {method:'POST'});
+  toast(r.ok ? 'All campaigns paused' : (r.error||'Error'), r.ok);
+  renderDashboard();
+}
+async function resumeAll() {
+  const r = await api('/api/resume-all', {method:'POST'});
+  toast(r.ok ? 'Campaigns resumed' : (r.error||'Error'), r.ok);
+  renderDashboard();
+}
+
+// ═══════════════════════════════════════════════════════════
+// ALL CAMPAIGNS (Screen subset)
+// ═══════════════════════════════════════════════════════════
+async function renderAllCampaigns() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading…</div>`;
+  const campaigns = await api('/api/campaigns');
+  $('view').innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold">All Campaigns</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">${campaigns.length||0} total</p>
+        </div>
+        <button onclick="go('create-campaign')" class="btn-primary"><span class="material-symbols-outlined icon-sm">add</span> New Campaign</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <table class="table">
+          <thead><tr><th>Campaign</th><th>Status</th><th>Contacts</th><th>Progress</th><th>Booked</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody>
+          ${!campaigns.length ? `<tr><td colspan="7" class="text-center py-12 text-on-surface-variant">No campaigns yet. <a href="#create-campaign" class="text-primary font-semibold">Create your first →</a></td></tr>` :
+            campaigns.map(c => `
+            <tr>
+              <td>
+                <div class="font-semibold">${esc(c.name)}</div>
+                <div class="text-[11px] text-on-surface-variant">${esc(c.code||'')} · ${esc(c.agent||'')}</div>
+              </td>
+              <td><span class="badge ${campaignColor(c.status)}">${c.status}</span></td>
+              <td>${c.contacts||0}</td>
+              <td>
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 bg-surface-container-high rounded-full" style="width:60px"><div class="h-full bg-primary rounded-full" style="width:${c.progress||0}%"></div></div>
+                  <span class="text-[11px]">${c.progress||0}%</span>
+                </div>
+              </td>
+              <td class="font-semibold text-tertiary">${c.booked||0}</td>
+              <td class="text-on-surface-variant">${fmtDate(c.created_at)}</td>
+              <td>
+                <div class="flex gap-1">
+                  ${c.status==='running'
+                    ? `<button onclick="pauseCampaign(${c.id})" class="btn-ghost text-[11px] px-2 py-1">Pause</button>`
+                    : c.status==='draft'
+                    ? `<button onclick="launchCampaign(${c.id})" class="btn-primary text-[11px] px-2 py-1">Launch</button>`
+                    : `<button onclick="resumeCampaign(${c.id})" class="btn-secondary text-[11px] px-2 py-1">Resume</button>`
+                  }
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function resumeCampaign(id) {
+  const r = await api(`/api/campaigns/${id}/resume`, {method:'POST'});
+  toast(r.ok ? 'Campaign resumed' : (r.error||'Error'), r.ok);
+  renderAllCampaigns();
+}
+
+// ═══════════════════════════════════════════════════════════
+// CREATE CAMPAIGN WIZARD (Screen 2)
+// ═══════════════════════════════════════════════════════════
+let _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true}};
+
+async function renderCreateCampaign() {
+  const lists = await api('/api/contact-lists');
+  const agents = await api('/api/employees');
+  _renderWizard(lists, agents);
+}
+
+function _renderWizard(lists=[], agents=[]) {
+  const steps = ['Campaign Info','Contacts','Voice Agent','Script & Logic','Schedule','Review'];
+  const s = _wizard.step; const d = _wizard.data;
+
+  const stepBar = steps.map((name,i) => `
+    <div class="wizard-step ${i+1<s?'done':i+1===s?'active':''}" onclick="_wizardGoStep(${i+1},${JSON.stringify(lists)},${JSON.stringify(agents)})">
+      <div class="step-num">${i+1<s?'<span class="material-symbols-outlined" style="font-size:12px">check</span>':i+1}</div>
+      <span class="hidden sm:block">${name}</span>
+    </div>
+    ${i<steps.length-1?'<div class="flex-1 h-px bg-surface-container-high mx-1"></div>':''}
+  `).join('');
+
+  let content = '';
+
+  if(s===1) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Campaign Information</h2>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Campaign Name *</label>
+          <input class="input" id="wName" value="${esc(d.name)}" placeholder="e.g. Raju Constituency Outreach 2026"/>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Campaign Objective</label>
+          <select class="select" id="wObjective">
+            ${['Appointment Booking','Voter Outreach','Lead Qualification','Survey','Follow-up'].map(o=>`<option ${d.objective===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Language</label>
+          <select class="select" id="wLang">
+            <option value="te" ${d.language==='te'?'selected':''}>Telugu (తెలుగు)</option>
+            <option value="hi" ${d.language==='hi'?'selected':''}>Hindi (हिन्दी)</option>
+            <option value="en" ${d.language==='en'?'selected':''}>English</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Target Region</label>
+          <input class="input" id="wRegion" value="${esc(d.region)}" placeholder="e.g. Tirupati North Constituency"/>
+        </div>
+      </div>
+    </div>
+  `;
+
+  else if(s===2) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Contact List</h2>
+      <div>
+        <label class="text-[12px] font-semibold text-on-surface-variant mb-2 block">Select existing contact list</label>
+        <div class="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+          ${lists.length===0 ? '<p class="text-on-surface-variant text-sm col-span-2">No contact lists yet. Upload one below.</p>' :
+            lists.map(l => `
+              <div class="p-3 rounded-xl border-2 cursor-pointer transition-all ${d.contact_list_id===l.id?'border-primary bg-primary-container/30':'border-surface-container-high hover:border-primary/50'}"
+                onclick="_wSelectList(${l.id},'${esc(l.name)}')">
+                <div class="font-semibold text-[13px]">${esc(l.name)}</div>
+                <div class="text-[11px] text-on-surface-variant mt-1">${l.contact_count||0} contacts</div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+      <div class="border-t border-surface-container-high pt-4">
+        <label class="text-[12px] font-semibold text-on-surface-variant mb-2 block">Or upload new list (Excel / CSV)</label>
+        <div class="border-2 border-dashed border-surface-container-high rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 transition-colors" onclick="$('wFileInput').click()">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px">upload_file</span>
+          <div class="text-[13px] font-medium mt-2">Drop Excel file here or click to upload</div>
+          <div class="text-[11px] text-on-surface-variant mt-1">Supports .xlsx, .xls, .csv with phone/name columns</div>
+        </div>
+        <input type="file" id="wFileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="wUploadFile(this)"/>
+        <div id="wUploadStatus" class="mt-2 text-[12px] text-tertiary font-medium"></div>
+      </div>
+    </div>
+  `;
+
+  else if(s===3) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Voice Agent</h2>
+      <div class="grid grid-cols-2 gap-3">
+        ${agents.length===0 ? '<p class="text-on-surface-variant col-span-2">No agents yet. <a href="#agent-studio" class="text-primary font-semibold">Create one in Agent Studio →</a></p>' :
+          agents.map(a => `
+            <div class="p-4 rounded-xl border-2 cursor-pointer transition-all ${d.employee_id===a.id?'border-primary bg-primary-container/30':'border-surface-container-high hover:border-primary/50'}"
+              onclick="_wSelectAgent(${a.id},'${esc(a.name)}')">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center font-bold text-primary">${(a.name||'S')[0]}</div>
+                <div>
+                  <div class="font-semibold text-[13px]">${esc(a.name)}</div>
+                  <div class="text-[11px] text-on-surface-variant">${esc(a.language)} · ${a.paused?'Paused':'Active'}</div>
+                </div>
+              </div>
+              <div class="text-[11px] text-on-surface-variant line-clamp-2">${esc((a.script||'').substring(0,80))}…</div>
+            </div>
+          `).join('')
+        }
+      </div>
+      <button onclick="go('agent-studio')" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> Create new agent</button>
+    </div>
+  `;
+
+  else if(s===4) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Script & Logic</h2>
+      <div>
+        <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Opening Greeting</label>
+        <textarea class="textarea h-20" id="wGreeting" placeholder="e.g. నమస్కారం {{name}} గారు! నేను సుమ — రాజు గారి campaign team నుండి మాట్లాడుతున్నాను...">${esc(d.greeting)}</textarea>
+        <p class="text-[11px] text-on-surface-variant mt-1">Use {{name}}, {{phone}} as variables</p>
+      </div>
+      <div>
+        <label class="text-[12px] font-semibold text-on-surface-variant mb-2 block">Objection Handling</label>
+        <div id="wObjList" class="space-y-2">
+          ${(d.objections||[{trigger:'',response:''}]).map((o,i) => `
+            <div class="grid grid-cols-2 gap-2">
+              <input class="input wObjTrigger" data-i="${i}" value="${esc(o.trigger)}" placeholder="Trigger: 'busy', 'not interested'…"/>
+              <input class="input wObjResp" data-i="${i}" value="${esc(o.response)}" placeholder="Agent response…"/>
+            </div>
+          `).join('')}
+        </div>
+        <button onclick="wAddObjection()" class="btn-ghost text-[12px] mt-2"><span class="material-symbols-outlined icon-sm">add</span> Add objection</button>
+      </div>
+    </div>
+  `;
+
+  else if(s===5) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Schedule & Calling Window</h2>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Start Time</label>
+          <input type="time" class="input" id="wWinStart" value="${d.window_start||'09:30'}"/>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">End Time</label>
+          <input type="time" class="input" id="wWinEnd" value="${d.window_end||'18:30'}"/>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Concurrency (simultaneous calls)</label>
+          <input type="number" class="input" id="wConcurrency" value="${d.concurrency||40}" min="1" max="200"/>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Max Retries per Contact</label>
+          <input type="number" class="input" id="wRetries" value="${d.max_retries||3}" min="1" max="10"/>
+        </div>
+        <div>
+          <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Retry Interval (hours)</label>
+          <input type="number" class="input" id="wRetryHours" value="${d.retry_interval_hours||2}" min="1" max="48"/>
+        </div>
+      </div>
+      <div class="p-4 bg-surface-container-low rounded-xl text-[12px] text-on-surface-variant">
+        <div class="flex items-center gap-2 font-semibold text-on-surface mb-1"><span class="material-symbols-outlined icon-sm">info</span> TRAI Compliance</div>
+        Calls will only be made between ${d.window_start||'09:30'}–${d.window_end||'18:30'} IST. No calls on national holidays. DND registry check is automatic.
+      </div>
+    </div>
+  `;
+
+  else if(s===6) content = `
+    <div class="space-y-5">
+      <h2 class="text-lg font-bold">Review & Launch</h2>
+      <div class="bg-surface-container-low rounded-xl p-4 space-y-3 text-[13px]">
+        ${[
+          ['Campaign Name', d.name||'—'],
+          ['Objective', d.objective||'—'],
+          ['Language', d.language||'—'],
+          ['Region', d.region||'—'],
+          ['Contact List ID', d.contact_list_id||'(none selected)'],
+          ['Agent ID', d.employee_id||'(none selected)'],
+          ['Calling Window', `${d.window_start||'09:30'} – ${d.window_end||'18:30'}`],
+          ['Concurrency', d.concurrency||40],
+          ['Max Retries', d.max_retries||3],
+        ].map(([label,val]) => `
+          <div class="flex justify-between border-b border-surface-container-high pb-2 last:border-0">
+            <span class="text-on-surface-variant font-medium">${label}</span>
+            <span class="font-semibold">${esc(String(val))}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="flex gap-2">
+        <label class="flex items-center gap-2 cursor-pointer text-[13px]">
+          <input type="checkbox" id="wSaveDraft" class="rounded"/> Save as Draft
+        </label>
+      </div>
+      <div id="wReviewError" class="text-error text-[12px] font-medium hidden"></div>
+    </div>
+  `;
+
+  $('view').innerHTML = `
+    <div class="max-w-3xl mx-auto">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h1 class="text-xl font-bold">Create Campaign</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">Step ${s} of 6</p>
+        </div>
+        <button onclick="go('all-campaigns')" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">close</span> Cancel</button>
+      </div>
+
+      <!-- Step Bar -->
+      <div class="flex items-center mb-8 bg-white rounded-2xl p-4 shadow-card">
+        ${stepBar}
+      </div>
+
+      <!-- Content -->
+      <div class="bg-white rounded-2xl shadow-card p-6 mb-5">
+        ${content}
+      </div>
+
+      <!-- Navigation -->
+      <div class="flex justify-between">
+        ${s>1 ? `<button onclick="_wizardPrev(${JSON.stringify(lists)},${JSON.stringify(agents)})" class="btn-ghost">← Back</button>` : '<div></div>'}
+        ${s<6
+          ? `<button onclick="_wizardNext(${JSON.stringify(lists)},${JSON.stringify(agents)})" class="btn-primary">Continue →</button>`
+          : `<button onclick="_wizardSubmit()" class="btn-primary"><span class="material-symbols-outlined icon-sm">rocket_launch</span> Launch Campaign</button>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function _wizardGoStep(step, lists, agents) {
+  if(step > _wizard.step) return; // can only go back
+  _wCollect();
+  _wizard.step = step;
+  _renderWizard(lists, agents);
+}
+function _wizardPrev(lists, agents) { _wCollect(); _wizard.step = Math.max(1, _wizard.step-1); _renderWizard(lists, agents); }
+function _wizardNext(lists, agents) {
+  _wCollect();
+  if(_wizard.step===1 && !_wizard.data.name.trim()) { toast('Campaign name is required', false); return; }
+  _wizard.step = Math.min(6, _wizard.step+1);
+  _renderWizard(lists, agents);
+}
+
+function _wCollect() {
+  const s = _wizard.step; const d = _wizard.data;
+  if(s===1) {
+    d.name = $('wName')?.value||d.name;
+    d.objective = $('wObjective')?.value||d.objective;
+    d.language = $('wLang')?.value||d.language;
+    d.region = $('wRegion')?.value||d.region;
+  } else if(s===4) {
+    d.greeting = $('wGreeting')?.value||d.greeting;
+    const triggers = document.querySelectorAll('.wObjTrigger');
+    const resps = document.querySelectorAll('.wObjResp');
+    d.objections = Array.from(triggers).map((t,i) => ({trigger:t.value, response:resps[i]?.value||''}));
+  } else if(s===5) {
+    d.window_start = $('wWinStart')?.value||d.window_start;
+    d.window_end = $('wWinEnd')?.value||d.window_end;
+    d.concurrency = parseInt($('wConcurrency')?.value)||d.concurrency;
+    d.max_retries = parseInt($('wRetries')?.value)||d.max_retries;
+    d.retry_interval_hours = parseInt($('wRetryHours')?.value)||d.retry_interval_hours;
+  }
+}
+
+function _wSelectList(id, name) { _wizard.data.contact_list_id = id; renderCreateCampaign(); }
+function _wSelectAgent(id, name) { _wizard.data.employee_id = id; renderCreateCampaign(); }
+
+function wAddObjection() {
+  _wCollect();
+  _wizard.data.objections.push({trigger:'',response:''});
+  renderCreateCampaign();
+}
+
+async function wUploadFile(input) {
+  const file = input.files[0]; if(!file) return;
+  const $status = $('wUploadStatus');
+  $status.textContent = 'Uploading…';
+  const fd = new FormData(); fd.append('file', file);
+  const res = await fetch('/dashboard/api/upload', {method:'POST', body:fd});
+  const r = await res.json();
+  if(r.error) { $status.textContent = '✗ ' + r.error; $status.style.color='#ba1a1a'; return; }
+  $status.textContent = `✓ Uploaded ${r.added} contacts (${r.skipped} skipped)`;
+  $status.style.color = '#005338';
+  _wizard.data.contact_list_id = r.list_id;
+}
+
+async function _wizardSubmit() {
+  _wCollect();
+  const d = _wizard.data;
+  if(!d.name.trim()) { toast('Campaign name required', false); return; }
+  const isDraft = $('wSaveDraft')?.checked;
+  const payload = {...d, status: isDraft ? 'draft' : 'draft', apply_to_leads: true};
+  const r = await api('/api/campaigns', {method:'POST', body:JSON.stringify(payload)});
+  if(r.error) { toast('Error: '+r.error, false); return; }
+  if(!isDraft) {
+    await api(`/api/campaigns/${r.id}/launch`, {method:'POST'});
+    toast('Campaign launched! 🚀');
+  } else {
+    toast('Campaign saved as draft');
+  }
+  _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true}};
+  go('all-campaigns');
+}
+
+// ═══════════════════════════════════════════════════════════
+// AGENT STUDIO (Screen 3)
+// ═══════════════════════════════════════════════════════════
+let _selectedAgent = null;
+let _playgroundHistory = [];
+
+async function renderAgentStudio() {
+  const agents = await api('/api/employees');
+  if(!_selectedAgent && agents.length) _selectedAgent = agents[0];
+  _renderAgentStudio(agents);
+}
+
+function _renderAgentStudio(agents) {
+  const a = _selectedAgent;
+  $('view').innerHTML = `
+    <div class="max-w-7xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold">Voice Agent Studio</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">Configure SUMA's voice, personality, and behaviour</p>
+        </div>
+        <button onclick="showCreateAgent()" class="btn-primary"><span class="material-symbols-outlined icon-sm">add</span> New Agent</button>
+      </div>
+      <div class="grid grid-cols-4 gap-4">
+
+        <!-- Agent List -->
+        <div class="col-span-1">
+          <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+            <div class="px-4 py-3 border-b border-surface-container-high text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">Agents (${agents.length})</div>
+            ${agents.length===0 ? `<div class="p-4 text-center text-on-surface-variant text-sm">No agents yet</div>` :
+              agents.map(ag => `
+                <div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-container-low border-l-4 transition-all ${a&&a.id===ag.id?'border-primary bg-primary-container/20':'border-transparent'}"
+                  onclick="_selectAgent(${ag.id})">
+                  <div class="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">${(ag.name||'S')[0]}</div>
+                  <div class="min-w-0">
+                    <div class="font-semibold text-[13px] truncate">${esc(ag.name)}</div>
+                    <div class="text-[11px] text-on-surface-variant">${ag.language} · ${ag.paused?'<span class="text-orange-500">Paused</span>':'<span class="text-tertiary">Active</span>'}</div>
+                  </div>
+                </div>
+              `).join('')
+            }
+          </div>
+        </div>
+
+        <!-- Agent Config -->
+        <div class="col-span-2 space-y-4">
+          ${a ? `
+            <div class="bg-white rounded-2xl shadow-card p-5">
+              <h3 class="font-semibold mb-4">Agent Identity</h3>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Name</label>
+                  <input class="input" id="aName" value="${esc(a.name||'')}"/>
+                </div>
+                <div>
+                  <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Language</label>
+                  <select class="select" id="aLang">
+                    <option value="te" ${a.language==='te'?'selected':''}>Telugu</option>
+                    <option value="hi" ${a.language==='hi'?'selected':''}>Hindi</option>
+                    <option value="en" ${a.language==='en'?'selected':''}>English</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Max Concurrency</label>
+                  <input type="number" class="input" id="aConcurrency" value="${a.max_concurrency||10}" min="1" max="200"/>
+                </div>
+                <div>
+                  <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Calling Window</label>
+                  <div class="flex gap-1">
+                    <input type="time" class="input" id="aWinStart" value="${a.window_start||'09:00'}"/>
+                    <input type="time" class="input" id="aWinEnd" value="${a.window_end||'20:00'}"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-card p-5">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold">Voice: Piper TTS (Telugu)</h3>
+                <span class="badge badge-green">Local Offline</span>
+              </div>
+              <div class="text-[12px] text-on-surface-variant mb-4 p-3 bg-surface-container-low rounded-lg">
+                <span class="material-symbols-outlined icon-sm text-tertiary">check_circle</span>
+                Using <strong>te_IN-venkatesh-medium</strong> (Piper TTS) — no cloud, no ElevenLabs, fully private.
+              </div>
+              <div class="space-y-3">
+                <div>
+                  <div class="flex justify-between mb-1">
+                    <label class="text-[11px] font-semibold text-on-surface-variant">Speech Rate</label>
+                    <span class="text-[11px] text-primary font-semibold" id="rateVal">${a.speech_rate||1.05}×</span>
+                  </div>
+                  <input type="range" class="range-track" min="0.7" max="1.5" step="0.05" value="${a.speech_rate||1.05}" oninput="$('rateVal').textContent=parseFloat(this.value).toFixed(2)+'×'"/>
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1">
+                    <label class="text-[11px] font-semibold text-on-surface-variant">Pitch Offset</label>
+                    <span class="text-[11px] text-primary font-semibold" id="pitchVal">${a.pitch||0} semitones</span>
+                  </div>
+                  <input type="range" class="range-track" min="-6" max="6" step="1" value="${a.pitch||0}" oninput="$('pitchVal').textContent=this.value+' semitones'"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-card p-5">
+              <h3 class="font-semibold mb-3">System Prompt</h3>
+              <textarea class="textarea h-40" id="aScript">${esc(a.script||'')}</textarea>
+              <p class="text-[11px] text-on-surface-variant mt-1">This is the LLM instruction that shapes the agent's personality and goal.</p>
+            </div>
+
+            <div class="flex gap-2">
+              <button onclick="saveAgent()" class="btn-primary flex-1"><span class="material-symbols-outlined icon-sm">save</span> Save Changes</button>
+              <button onclick="togglePauseAgent()" class="btn-ghost ${a.paused?'text-tertiary':'text-orange-500'}">
+                <span class="material-symbols-outlined icon-sm">${a.paused?'play_circle':'pause_circle'}</span>
+                ${a.paused?'Activate':'Pause'}
+              </button>
+            </div>
+          ` : '<div class="bg-white rounded-2xl shadow-card p-8 text-center text-on-surface-variant">Select an agent or create a new one</div>'}
+        </div>
+
+        <!-- Playground -->
+        <div class="col-span-1">
+          <div class="bg-white rounded-2xl shadow-card flex flex-col" style="height:calc(100vh - 200px)">
+            <div class="px-4 py-3 border-b border-surface-container-high">
+              <div class="font-semibold text-[13px]">Voice Playground</div>
+              <div class="text-[11px] text-on-surface-variant">Test agent responses</div>
+            </div>
+            <div id="playground" class="flex-1 overflow-y-auto p-3 space-y-2 text-[12px]">
+              <div class="text-center text-on-surface-variant text-[11px] py-4">Start the conversation below</div>
+            </div>
+            <div class="p-3 border-t border-surface-container-high">
+              <div class="flex gap-2">
+                <input id="pgInput" class="input flex-1 text-[12px]" placeholder="Type message in Telugu…" onkeydown="if(event.key==='Enter')sendPlayground()"/>
+                <button onclick="sendPlayground()" class="btn-primary px-3 py-2"><span class="material-symbols-outlined icon-sm">send</span></button>
+              </div>
+              <button onclick="resetPlayground()" class="text-[11px] text-on-surface-variant hover:text-error mt-1.5 w-full text-center">Reset conversation</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+async function _selectAgent(id) {
+  const agents = await api('/api/employees');
+  _selectedAgent = agents.find(a => a.id === id) || agents[0];
+  _renderAgentStudio(agents);
+}
+
+async function saveAgent() {
+  if(!_selectedAgent) return;
+  const payload = {
+    name: $('aName')?.value,
+    language: $('aLang')?.value,
+    max_concurrency: parseInt($('aConcurrency')?.value)||10,
+    window_start: $('aWinStart')?.value,
+    window_end: $('aWinEnd')?.value,
+    script: $('aScript')?.value,
+  };
+  const r = await api(`/api/employees/${_selectedAgent.id}`, {method:'PATCH', body:JSON.stringify(payload)});
+  toast(r.ok ? 'Agent saved!' : (r.error||'Error'), !!r.ok);
+  if(r.ok) await renderAgentStudio();
+}
+
+async function togglePauseAgent() {
+  if(!_selectedAgent) return;
+  const r = await api(`/api/employees/${_selectedAgent.id}`, {method:'PATCH', body:JSON.stringify({paused:!_selectedAgent.paused})});
+  toast(r.ok ? (_selectedAgent.paused?'Agent activated':'Agent paused') : 'Error', !!r.ok);
+  if(r.ok) await renderAgentStudio();
+}
+
+async function sendPlayground() {
+  const input = $('pgInput'); if(!input) return;
+  const msg = input.value.trim(); if(!msg) return;
+  input.value = '';
+  const pg = $('playground');
+  pg.innerHTML += `<div class="ml-auto max-w-[80%] bg-primary text-white rounded-xl rounded-tr-sm px-3 py-2">${esc(msg)}</div>`;
+  pg.scrollTop = pg.scrollHeight;
+
+  const r = await api('/api/playground', {method:'POST', body:JSON.stringify({agent_id:_selectedAgent?.id||0, message:msg})});
+  if(r.reply) {
+    pg.innerHTML += `<div class="max-w-[80%] bg-surface-container-low rounded-xl rounded-tl-sm px-3 py-2">${esc(r.reply)}</div>`;
+    if(r.booked) pg.innerHTML += `<div class="text-center text-[11px] text-tertiary font-semibold">✓ Appointment booked in playground</div>`;
+    pg.scrollTop = pg.scrollHeight;
+  }
+}
+
+async function resetPlayground() {
+  if(_selectedAgent) await api('/api/playground', {method:'POST', body:JSON.stringify({agent_id:_selectedAgent.id, reset:true})});
+  const pg = $('playground');
+  if(pg) { pg.innerHTML = '<div class="text-center text-on-surface-variant text-[11px] py-4">Conversation reset</div>'; }
+}
+
+function showCreateAgent() {
+  showModal(`
+    <div class="bg-white rounded-2xl p-6 w-96 shadow-modal">
+      <h3 class="font-bold text-lg mb-4">Create New Agent</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Agent Name</label>
+          <input class="input" id="newAgentName" value="Suma" placeholder="Suma"/>
+        </div>
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Language</label>
+          <select class="select" id="newAgentLang">
+            <option value="te">Telugu</option>
+            <option value="hi">Hindi</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">System Prompt</label>
+          <textarea class="textarea h-24" id="newAgentScript" placeholder="You are Suma, a warm Telugu voice agent…"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-5">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button onclick="createAgent()" class="btn-primary flex-1">Create</button>
+      </div>
+    </div>
+  `);
+}
+
+async function createAgent() {
+  const payload = {
+    name: $('newAgentName')?.value||'Suma',
+    language: $('newAgentLang')?.value||'te',
+    script: $('newAgentScript')?.value||'You are Suma, a polite Telugu voice agent.',
+    max_concurrency: 10,
+  };
+  const r = await api('/api/employees', {method:'POST', body:JSON.stringify(payload)});
+  if(r.id) { toast('Agent created!'); hideModal(); await renderAgentStudio(); }
+  else toast('Error: '+(r.error||'failed'), false);
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE CALLS (Screen 4)
+// ═══════════════════════════════════════════════════════════
+let _liveCallsRefresh = null;
+let _selectedCall = null;
+
+async function renderLiveCalls() {
+  if(_liveCallsRefresh) clearInterval(_liveCallsRefresh);
+  await _loadLiveCalls();
+  _liveCallsRefresh = setInterval(_loadLiveCalls, 4000);
+}
+
+async function _loadLiveCalls() {
+  const data = await api('/api/live-calls');
+  const autocall = await api('/api/autocall/status');
+  const calls = data.calls || [];
+
+  const statusDist = data.distribution || {};
+  const totalLive = calls.filter(c=>c.status==='connected'||c.status==='dialing').length;
+
+  // Update header live count
+  $('liveCount') && ($('liveCount').textContent = totalLive + ' Live');
+
+  if(!_selectedCall && calls.length) _selectedCall = calls[0];
+
+  const callCards = calls.map(c => {
+    const isActive = c.status === 'connected' || c.status === 'dialing';
+    const pulseClass = c.status==='connected'?'pulse-green':c.status==='dialing'?'pulse-blue':'pulse-gray';
+    const isSelected = _selectedCall && _selectedCall.id === c.id;
+    return `
+      <div class="call-card ${isSelected?'selected':''}" onclick="_selectLiveCall(${c.id})">
+        <div class="flex items-start justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="pulse-ring ${pulseClass}"></span>
+            <span class="font-semibold text-[13px]">${esc(c.name||'Unknown')}</span>
+          </div>
+          <span class="badge ${statusColor(c.status)} text-[10px]">${c.status}</span>
+        </div>
+        <div class="text-[12px] text-on-surface-variant">${esc(c.phone||'—')}</div>
+        <div class="flex justify-between mt-2 text-[11px] text-on-surface-variant">
+          <span>${esc(c.agent||'Suma')}</span>
+          <span>${fmtDur(c.duration)}</span>
+        </div>
+      </div>
+    `;
+  });
+
+  const selected = calls.find(c => _selectedCall && c.id === _selectedCall.id) || calls[0];
+  const turns = (selected?.turns||[]);
+
+  const transcriptHtml = turns.length===0
+    ? '<div class="text-center text-on-surface-variant py-8 text-[12px]">No transcript yet</div>'
+    : turns.map(t => `
+        <div class="flex gap-3 ${t.role==='agent'?'':'flex-row-reverse'}">
+          <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold ${t.role==='agent'?'bg-primary text-white':'bg-surface-container-high text-on-surface-variant'}">
+            ${t.role==='agent'?'AI':'C'}
+          </div>
+          <div class="max-w-[75%] px-3 py-2 rounded-xl rounded-${t.role==='agent'?'tl':'tr'}-sm text-[13px] ${t.role==='agent'?'bg-primary-container text-on-primary-container':'bg-surface-container-low text-on-surface'}">
+            ${esc(t.text)}
+          </div>
+        </div>
+      `).join('');
+
+  const viewEl = $('view');
+  if(!viewEl) return;
+
+  viewEl.innerHTML = `
+    <div class="max-w-7xl mx-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h1 class="text-xl font-bold">Live Call Monitoring</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">${totalLive} active · auto-refreshes every 4s</p>
+        </div>
+        <div class="flex gap-2">
+          ${autocall.active
+            ? `<button onclick="stopAutocall()" class="btn-ghost text-[12px] text-orange-500 border-orange-200"><span class="material-symbols-outlined icon-sm">stop_circle</span> Stop Auto-Call</button>`
+            : `<button onclick="startAutocall()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">play_circle</span> Start Auto-Call</button>`
+          }
+          <button onclick="pauseAll()" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">pause_circle</span> Pause All</button>
+        </div>
+      </div>
+
+      <!-- Status Tiles -->
+      <div class="grid grid-cols-4 gap-3 mb-4">
+        ${[
+          {label:'Live Calls',val:totalLive,color:'text-tertiary',bg:'bg-tertiary/10',icon:'phone_in_talk'},
+          {label:'Dialing',val:statusDist.dialing||0,color:'text-blue-600',bg:'bg-blue-50',icon:'phone_callback'},
+          {label:'Auto-Call',val:autocall.active?'ON':'OFF',color:autocall.active?'text-tertiary':'text-on-surface-variant',bg:autocall.active?'bg-tertiary/10':'bg-surface-container-low',icon:'smart_toy'},
+          {label:'Remaining',val:autocall.remaining||0,color:'text-primary',bg:'bg-primary-container/40',icon:'contacts'},
+        ].map(t => `
+          <div class="bg-white rounded-xl p-4 shadow-card flex items-center gap-3">
+            <div class="${t.bg} p-2 rounded-lg"><span class="material-symbols-outlined ${t.color}">${t.icon}</span></div>
+            <div>
+              <div class="text-xl font-bold ${t.color}">${t.val}</div>
+              <div class="text-[11px] text-on-surface-variant">${t.label}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <!-- Call Cards -->
+        <div class="col-span-1">
+          <div class="bg-white rounded-2xl shadow-card overflow-hidden" style="max-height:calc(100vh-280px);overflow-y:auto">
+            <div class="px-4 py-3 border-b border-surface-container-high text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
+              Active Calls (${calls.length})
+            </div>
+            ${calls.length===0
+              ? '<div class="p-6 text-center text-on-surface-variant text-sm">No active calls</div>'
+              : `<div class="p-3 space-y-2">${callCards.join('')}</div>`
+            }
+          </div>
+        </div>
+
+        <!-- Transcript + Controls -->
+        <div class="col-span-2 flex flex-col gap-4">
+          ${selected ? `
+            <div class="bg-white rounded-2xl shadow-card p-4 flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold">${(selected.name||'?')[0]}</div>
+                <div>
+                  <div class="font-semibold">${esc(selected.name||'Unknown')}</div>
+                  <div class="text-[12px] text-on-surface-variant">${esc(selected.phone||'')} · ${fmtDur(selected.duration)}</div>
+                </div>
+                <span class="badge ${statusColor(selected.status)} ml-2">${selected.status}</span>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="forceEndCall(${selected.id})" class="btn-ghost text-[12px] text-error border-red-200"><span class="material-symbols-outlined icon-sm">call_end</span> End</button>
+                <button onclick="markBooked(${selected.id})" class="btn-secondary text-[12px]"><span class="material-symbols-outlined icon-sm">calendar_month</span> Book</button>
+                <button onclick="transferCall(${selected.id})" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">transfer_within_a_station</span> Transfer</button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-card flex-1" style="max-height:calc(100vh-380px)">
+              <div class="px-5 py-3 border-b border-surface-container-high font-semibold text-[13px]">
+                Conversation Transcript
+              </div>
+              <div class="p-4 space-y-3 overflow-y-auto" style="max-height:calc(100vh-460px)">
+                ${transcriptHtml}
+              </div>
+            </div>
+          ` : `
+            <div class="bg-white rounded-2xl shadow-card p-8 text-center text-on-surface-variant">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:40px">phone_missed</span>
+              <p class="mt-2">No call selected</p>
+            </div>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function _selectLiveCall(id) {
+  _selectedCall = {id};
+  _loadLiveCalls();
+}
+
+async function forceEndCall(id) {
+  if(!confirm('Force-end this call?')) return;
+  const r = await api(`/api/live-calls/${id}/end`, {method:'POST'});
+  toast(r.ok ? 'Call ended' : (r.error||'Error'), !!r.ok);
+}
+
+async function markBooked(id) {
+  const r = await api(`/api/live-calls/${id}/book`, {method:'POST'});
+  toast(r.ok ? 'Appointment booked!' : (r.error||'Error'), !!r.ok);
+}
+
+async function transferCall(id) {
+  const r = await api(`/api/live-calls/${id}/transfer`, {method:'POST', body:JSON.stringify({desk:'human'})});
+  toast(r.ok ? 'Transferred to human' : (r.error||'Error'), !!r.ok);
+}
+
+async function startAutocall() {
+  const r = await api('/api/autocall/start', {method:'POST'});
+  toast(r.status==='started' ? `Auto-call started (${r.remaining} remaining)` : r.status);
+}
+
+async function stopAutocall() {
+  const r = await api('/api/autocall/stop', {method:'POST'});
+  toast('Auto-call stopped');
+}
+
+// ═══════════════════════════════════════════════════════════
+// CALL HISTORY
+// ═══════════════════════════════════════════════════════════
+async function renderCallHistory() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading…</div>`;
+  const calls = await api('/api/calls');
+  $('view').innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold">Call History</h1>
+          <p class="text-sm text-on-surface-variant">${calls.length||0} total calls</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <table class="table">
+          <thead><tr><th>Contact</th><th>Status</th><th>Outcome</th><th>Duration</th><th>Started</th><th>Transcript</th></tr></thead>
+          <tbody>
+          ${!calls.length ? `<tr><td colspan="6" class="text-center py-12 text-on-surface-variant">No calls recorded yet</td></tr>` :
+            calls.map(c => `
+              <tr>
+                <td>
+                  <div class="font-medium">${esc(c.name||'—')}</div>
+                  <div class="text-[11px] text-on-surface-variant">${esc(c.phone||'—')}</div>
+                </td>
+                <td><span class="badge ${statusColor(c.status)}">${c.status}</span></td>
+                <td class="text-on-surface-variant text-[12px]">${esc(c.outcome||'—')}</td>
+                <td>${fmtDur(c.duration)}</td>
+                <td class="text-[12px] text-on-surface-variant">${fmtDate(c.started)}</td>
+                <td>
+                  ${c.turns?.length
+                    ? `<button onclick="showTranscript(${c.id})" class="text-[11px] text-primary hover:underline">${c.turns.length} turns →</button>`
+                    : '<span class="text-on-surface-variant text-[11px]">—</span>'
+                  }
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  _callsData = calls;
+}
+
+let _callsData = [];
+function showTranscript(id) {
+  const call = _callsData.find(c => c.id === id); if(!call) return;
+  const turns = call.turns||[];
+  showModal(`
+    <div class="bg-white rounded-2xl p-5 w-[500px] max-h-[70vh] overflow-y-auto shadow-modal">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h3 class="font-bold">Call Transcript</h3>
+          <p class="text-[12px] text-on-surface-variant">${esc(call.name||'—')} · ${esc(call.phone||'—')}</p>
+        </div>
+        <button onclick="hideModal()" class="p-1 hover:bg-surface-container-low rounded-lg"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="space-y-3">
+        ${turns.map(t => `
+          <div class="flex gap-3 ${t.role==='agent'?'':'flex-row-reverse'}">
+            <div class="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${t.role==='agent'?'bg-primary text-white':'bg-surface-container text-on-surface-variant'}">
+              ${t.role==='agent'?'AI':'C'}
+            </div>
+            <div class="max-w-[80%] px-3 py-2 rounded-xl text-[13px] ${t.role==='agent'?'bg-primary-container text-on-primary-container':'bg-surface-container text-on-surface'}">
+              ${esc(t.text)}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTACT LISTS
+// ═══════════════════════════════════════════════════════════
+async function renderContactLists() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading…</div>`;
+  const lists = await api('/api/contact-lists');
+  const leads = await api('/api/leads');
+
+  $('view').innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold">Contact Lists</h1>
+          <p class="text-sm text-on-surface-variant">${leads.length||0} total contacts</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="showAddContact()" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">person_add</span> Add Contact</button>
+          <label class="btn-primary text-[12px] cursor-pointer">
+            <span class="material-symbols-outlined icon-sm">upload_file</span> Upload Excel
+            <input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="uploadContacts(this)"/>
+          </label>
+        </div>
+      </div>
+
+      ${lists.length>0 ? `
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          ${lists.map(l => `
+            <div class="bg-white rounded-xl p-4 shadow-card">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="material-symbols-outlined text-primary">contacts</span>
+                <div class="font-semibold text-[13px] truncate">${esc(l.name)}</div>
+              </div>
+              <div class="text-2xl font-bold text-primary">${l.contact_count||0}</div>
+              <div class="text-[11px] text-on-surface-variant mt-0.5">contacts · ${fmtDate(l.created_at)}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="px-5 py-3 border-b border-surface-container-high flex items-center justify-between">
+          <div class="font-semibold text-[13px]">All Contacts</div>
+          <button onclick="startDispatch()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">send</span> Dispatch All</button>
+        </div>
+        <table class="table">
+          <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Attempts</th><th>Last Called</th><th>Actions</th></tr></thead>
+          <tbody>
+          ${!leads.length ? `<tr><td colspan="6" class="text-center py-12 text-on-surface-variant">No contacts — upload an Excel file or add manually</td></tr>` :
+            leads.slice(0,200).map(l => `
+              <tr>
+                <td class="font-medium">${esc(l.name||'—')}</td>
+                <td class="text-[12px]">${esc(l.phone||'—')}</td>
+                <td><span class="badge ${statusColor(l.status==='done'?'completed':l.status==='failed'?'failed':l.status)}">${l.status}</span></td>
+                <td>${l.attempts||0}</td>
+                <td class="text-[12px] text-on-surface-variant">${fmtDate(l.last_called)||'—'}</td>
+                <td>
+                  <div class="flex gap-1">
+                    <button onclick="recallLead(${l.id})" title="Call now" class="p-1 hover:bg-surface-container rounded text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined icon-sm">phone</span></button>
+                    <button onclick="deleteLead(${l.id})" title="Delete" class="p-1 hover:bg-surface-container rounded text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined icon-sm">delete</span></button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function uploadContacts(input) {
+  const file = input.files[0]; if(!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  const res = await fetch('/dashboard/api/upload', {method:'POST', body:fd});
+  const r = await res.json();
+  if(r.error) { toast('Upload failed: '+r.error, false); return; }
+  toast(`Uploaded ${r.added} contacts!`);
+  renderContactLists();
+}
+
+async function recallLead(id) {
+  const r = await api(`/api/recall/${id}`, {method:'POST'});
+  toast(r.dialed ? 'Call dispatched!' : (r.error||'Failed'), !r.error);
+}
+
+async function deleteLead(id) {
+  if(!confirm('Delete this contact?')) return;
+  const r = await api(`/api/lead/${id}`, {method:'DELETE'});
+  toast(r.deleted ? 'Contact deleted' : (r.error||'Error'), !!r.deleted);
+  renderContactLists();
+}
+
+async function startDispatch() {
+  const r = await api('/api/dispatch', {method:'POST'});
+  toast(`Dispatched ${(r.dialed||[]).length} calls`);
+}
+
+function showAddContact() {
+  showModal(`
+    <div class="bg-white rounded-2xl p-5 w-80 shadow-modal">
+      <h3 class="font-bold mb-4">Add Contact</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Name (optional)</label>
+          <input class="input" id="newContactName" placeholder="Ramesh Reddy"/>
+        </div>
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Phone *</label>
+          <input class="input" id="newContactPhone" placeholder="9876543210"/>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button onclick="addContact()" class="btn-primary flex-1">Add</button>
+      </div>
+    </div>
+  `);
+}
+
+async function addContact() {
+  const phone = $('newContactPhone')?.value?.trim();
+  const name = $('newContactName')?.value?.trim();
+  if(!phone) { toast('Phone required', false); return; }
+  const r = await api('/api/add_lead', {method:'POST', body:JSON.stringify({phone, name})});
+  if(r.error) { toast('Error: '+r.error, false); return; }
+  toast('Contact added!'); hideModal(); renderContactLists();
+}
+
+// ═══════════════════════════════════════════════════════════
+// APPOINTMENTS
+// ═══════════════════════════════════════════════════════════
+async function renderAppointments() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading…</div>`;
+  const appts = await api('/api/appointments');
+  $('view').innerHTML = `
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold">Appointments</h1>
+          <p class="text-sm text-on-surface-variant">${appts.length||0} total</p>
+        </div>
+        <button onclick="showAddAppt()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> New Appointment</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <table class="table">
+          <thead><tr><th>Contact</th><th>Scheduled</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+          <tbody>
+          ${!appts.length ? `<tr><td colspan="5" class="text-center py-12 text-on-surface-variant">No appointments yet</td></tr>` :
+            appts.map(a => `
+              <tr>
+                <td>
+                  <div class="font-medium">${esc(a.name||'—')}</div>
+                  <div class="text-[11px] text-on-surface-variant">${esc(a.phone||'—')}</div>
+                </td>
+                <td>${fmtDate(a.scheduled_at)} ${fmtTime(a.scheduled_at)}</td>
+                <td><span class="badge ${a.status==='confirmed'?'badge-green':a.status==='completed'?'badge-gray':a.status==='cancelled'?'badge-red':'badge-blue'}">${a.status}</span></td>
+                <td class="text-[12px] text-on-surface-variant max-w-[200px] truncate">${esc(a.notes||'—')}</td>
+                <td>
+                  <div class="flex gap-1">
+                    <button onclick="confirmAppt(${a.id})" class="p-1 text-on-surface-variant hover:text-tertiary hover:bg-surface-container rounded transition-colors" title="Confirm"><span class="material-symbols-outlined icon-sm">check_circle</span></button>
+                    <button onclick="cancelAppt(${a.id})" class="p-1 text-on-surface-variant hover:text-error hover:bg-surface-container rounded transition-colors" title="Cancel"><span class="material-symbols-outlined icon-sm">cancel</span></button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function confirmAppt(id) {
+  const r = await api(`/api/appointments/${id}`, {method:'PATCH', body:JSON.stringify({status:'confirmed'})});
+  toast(r.ok ? 'Confirmed' : 'Error', !!r.ok); renderAppointments();
+}
+
+async function cancelAppt(id) {
+  if(!confirm('Cancel this appointment?')) return;
+  const r = await api(`/api/appointments/${id}`, {method:'PATCH', body:JSON.stringify({status:'cancelled'})});
+  toast(r.ok ? 'Cancelled' : 'Error', !!r.ok); renderAppointments();
+}
+
+function showAddAppt() {
+  showModal(`
+    <div class="bg-white rounded-2xl p-5 w-96 shadow-modal">
+      <h3 class="font-bold mb-4">New Appointment</h3>
+      <div class="space-y-3">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Name</label>
+            <input class="input" id="naName" placeholder="Contact name"/>
+          </div>
+          <div>
+            <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Phone</label>
+            <input class="input" id="naPhone" placeholder="9876543210"/>
+          </div>
+        </div>
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Date & Time</label>
+          <input type="datetime-local" class="input" id="naWhen"/>
+        </div>
+        <div>
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Notes</label>
+          <textarea class="textarea h-16" id="naNotes" placeholder="Any notes…"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button onclick="createAppt()" class="btn-primary flex-1">Create</button>
+      </div>
+    </div>
+  `);
+}
+
+async function createAppt() {
+  const when = $('naWhen')?.value;
+  const r = await api('/api/appointments', {method:'POST', body:JSON.stringify({
+    name: $('naName')?.value,
+    phone: $('naPhone')?.value,
+    scheduled_at: when ? new Date(when).toISOString() : null,
+    notes: $('naNotes')?.value,
+    status: 'scheduled',
+  })});
+  if(r.id) { toast('Appointment created!'); hideModal(); renderAppointments(); }
+  else toast('Error', false);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════
+async function renderSettings() {
+  const settings = await api('/api/settings');
+  const integrations = await api('/api/integrations');
+  $('view').innerHTML = `
+    <div class="max-w-3xl mx-auto space-y-5">
+      <h1 class="text-xl font-bold mb-5">Settings</h1>
+
+      <div class="bg-white rounded-2xl shadow-card p-5">
+        <h3 class="font-semibold mb-4">Organisation</h3>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Org Name</label>
+            <input class="input" id="sOrgName" value="${esc(settings.org_name||'')}"/>
+          </div>
+          <div>
+            <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Timezone</label>
+            <input class="input" id="sTimezone" value="${esc(settings.timezone||'Asia/Kolkata')}"/>
+          </div>
+          <div>
+            <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Caller ID (Plivo number)</label>
+            <input class="input" id="sCallerID" value="${esc(settings.caller_id||'')}"/>
+          </div>
+        </div>
+        <button onclick="saveSettings()" class="btn-primary mt-4 text-[12px]">Save Changes</button>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-card p-5">
+        <h3 class="font-semibold mb-3">AI Pipeline Status</h3>
+        <div class="space-y-2">
+          ${[
+            {key:'plivo', label:'Plivo Telephony', icon:'cell_tower'},
+            {key:'openai', label:'OpenAI (Whisper STT + GPT-4o-mini)', icon:'neurology'},
+            {key:'tts', label:'Piper TTS — Local Telugu', icon:'record_voice_over'},
+          ].map(item => `
+            <div class="flex items-center justify-between p-3 bg-surface-container-low rounded-xl">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant icon-sm">${item.icon}</span>
+                <span class="text-[13px]">${item.label}</span>
+              </div>
+              <span class="badge ${item.key==='plivo'?(settings.plivo_configured?'badge-green':'badge-red'):item.key==='openai'?(settings.openai_configured?'badge-green':'badge-red'):'badge-green'}">
+                ${item.key==='plivo'?(settings.plivo_configured?'Connected':'Not configured'):item.key==='openai'?(settings.openai_configured?'Connected':'Not configured'):'Active'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function saveSettings() {
+  const r = await api('/api/settings', {method:'POST', body:JSON.stringify({
+    org_name: $('sOrgName')?.value,
+    timezone: $('sTimezone')?.value,
+    caller_id: $('sCallerID')?.value,
+  })});
+  toast(r.ok ? 'Settings saved' : (r.error||'Error'), !!r.ok);
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEAM
+// ═══════════════════════════════════════════════════════════
+async function renderTeam() {
+  const team = await api('/api/team');
+  $('view').innerHTML = `
+    <div class="max-w-4xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <h1 class="text-xl font-bold">Team & Permissions</h1>
+        <button onclick="showAddMember()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">person_add</span> Add Member</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <table class="table">
+          <thead><tr><th>Member</th><th>Role</th><th>Status</th></tr></thead>
+          <tbody>
+          ${!team.length ? `<tr><td colspan="3" class="text-center py-10 text-on-surface-variant">No team members</td></tr>` :
+            team.map(m => `
+              <tr>
+                <td>
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-[11px] font-bold text-secondary">${(m.name||'?')[0]}</div>
+                    <div>
+                      <div class="font-medium">${esc(m.name)}</div>
+                      <div class="text-[11px] text-on-surface-variant">${esc(m.email)}</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="badge badge-purple">${esc(m.role)}</span></td>
+                <td><span class="badge ${m.active?'badge-green':'badge-gray'}">${m.active?'Active':'Inactive'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function showAddMember() {
+  showModal(`
+    <div class="bg-white rounded-2xl p-5 w-80 shadow-modal">
+      <h3 class="font-bold mb-4">Add Team Member</h3>
+      <div class="space-y-3">
+        <input class="input" id="tmName" placeholder="Full name"/>
+        <input class="input" id="tmEmail" placeholder="Email address"/>
+        <select class="select" id="tmRole">
+          <option value="operator">Operator</option>
+          <option value="admin">Admin</option>
+          <option value="viewer">Viewer</option>
+        </select>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button onclick="addMember()" class="btn-primary flex-1">Add</button>
+      </div>
+    </div>
+  `);
+}
+
+async function addMember() {
+  const r = await api('/api/team', {method:'POST', body:JSON.stringify({
+    name: $('tmName')?.value,
+    email: $('tmEmail')?.value,
+    role: $('tmRole')?.value,
+  })});
+  if(r.id) { toast('Member added!'); hideModal(); renderTeam(); }
+  else toast('Error', false);
+}
+
+// ═══════════════════════════════════════════════════════════
+// EMPLOYEES (Screen: single call + excel campaign)
+// ═══════════════════════════════════════════════════════════
+async function renderEmployees() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading employees…</div>`;
+  const employees = await api('/api/employees');
+  if (!Array.isArray(employees)) { $('view').innerHTML = `<div class="text-red-500 p-6">Failed to load employees.</div>`; return; }
+
+  $('view').innerHTML = `
+    <div class="max-w-6xl mx-auto space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-bold text-on-surface">Employees</h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">AI Voice Agents · ${employees.length} configured</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="go('agent-studio')" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">settings_voice</span> Agent Studio</button>
+        </div>
+      </div>
+
+      ${employees.length === 0 ? `
+        <div class="bg-white rounded-2xl shadow-card p-16 text-center text-on-surface-variant">
+          <span class="material-symbols-outlined" style="font-size:48px">record_voice_over</span>
+          <p class="mt-3 font-semibold text-on-surface">No voice agents configured</p>
+          <p class="text-sm mt-1">Create an AI employee in Voice Agent Studio first</p>
+          <button onclick="go('agent-studio')" class="btn-primary mt-5">Open Voice Agent Studio</button>
+        </div>
+      ` : `
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          ${employees.map(emp => {
+            const langLabel = {te:'Telugu',hi:'Hindi',en:'English',ta:'Tamil',kn:'Kannada'}[emp.language] || emp.language;
+            return `
+            <div class="bg-white rounded-2xl border border-surface-container-high shadow-card hover:border-primary hover:shadow-hover transition-all flex flex-col">
+              <!-- Card Header -->
+              <div class="p-5 flex items-start justify-between border-b border-surface-container-high">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-xl bg-primary flex items-center justify-center shadow-sm">
+                    <span class="material-symbols-outlined text-white icon-lg">record_voice_over</span>
+                  </div>
+                  <div>
+                    <div class="font-bold text-on-surface text-[15px]">${esc(emp.name)}</div>
+                    <div class="text-[11px] text-on-surface-variant mt-0.5">${langLabel} · ${emp.voice_tier || 'standard'}</div>
+                  </div>
+                </div>
+                <span class="badge ${emp.paused ? 'badge-orange' : 'badge-green'} flex-shrink-0">${emp.paused ? 'Paused' : 'Active'}</span>
+              </div>
+
+              <!-- Stats -->
+              <div class="px-5 py-3 grid grid-cols-3 gap-2 text-center border-b border-surface-container-high">
+                <div>
+                  <div class="text-[13px] font-bold text-primary">${emp.max_concurrency}</div>
+                  <div class="text-[10px] text-on-surface-variant">Concurrency</div>
+                </div>
+                <div>
+                  <div class="text-[13px] font-bold text-on-surface">${emp.window_start}–${emp.window_end}</div>
+                  <div class="text-[10px] text-on-surface-variant">Call Window</div>
+                </div>
+                <div>
+                  <div class="text-[13px] font-bold text-on-surface">${emp.max_attempts || 3}×</div>
+                  <div class="text-[10px] text-on-surface-variant">Max Retries</div>
+                </div>
+              </div>
+
+              ${emp.phone_number ? `
+              <div class="px-5 py-2.5 flex items-center gap-2 border-b border-surface-container-high">
+                <span class="material-symbols-outlined icon-sm text-on-surface-variant">sim_card</span>
+                <span class="text-[12px] text-on-surface-variant font-mono">${esc(emp.phone_number)}</span>
+              </div>` : ''}
+
+              <!-- Action Buttons -->
+              <div class="p-4 mt-auto space-y-2">
+                <button onclick="showSingleCallModal(${emp.id},'${esc(emp.name)}')"
+                  class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-surface-container-low hover:bg-primary-container text-on-surface hover:text-primary border border-surface-container-high hover:border-primary rounded-xl text-[13px] font-semibold transition-all">
+                  <span class="material-symbols-outlined icon-sm">phone</span> Single Call
+                </button>
+                <button onclick="showExcelCampaignModal(${emp.id},'${esc(emp.name)}')"
+                  class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-white hover:bg-primary/90 rounded-xl text-[13px] font-semibold transition-all shadow-sm">
+                  <span class="material-symbols-outlined icon-sm">upload_file</span> Excel Campaign
+                </button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function showSingleCallModal(employeeId, employeeName) {
+  showModal(`
+    <div class="bg-white rounded-2xl p-6 w-96 shadow-modal">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
+          <span class="material-symbols-outlined text-white">phone</span>
+        </div>
+        <div>
+          <h3 class="text-[16px] font-bold text-on-surface">Single Call</h3>
+          <p class="text-[11px] text-on-surface-variant">Agent: <strong>${esc(employeeName)}</strong></p>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Phone Number *</label>
+          <div class="relative">
+            <span class="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant" style="font-size:16px">call</span>
+            <input class="input pl-9" id="scPhone" placeholder="+91 98765 43210" type="tel" autofocus/>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Contact Name</label>
+          <input class="input" id="scName" placeholder="Optional"/>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Notes</label>
+          <textarea class="textarea" id="scNotes" rows="2" placeholder="Optional context for the agent…"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-5">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button id="scBtn" onclick="doSingleCall(${employeeId})" class="btn-primary flex-1">
+          <span class="material-symbols-outlined icon-sm">phone</span> Call Now
+        </button>
+      </div>
+    </div>
+  `);
+  setTimeout(() => $('scPhone')?.focus(), 50);
+}
+
+async function doSingleCall(employeeId) {
+  const phone = $('scPhone')?.value?.trim();
+  const name = $('scName')?.value?.trim();
+  const notes = $('scNotes')?.value?.trim();
+  if (!phone) { toast('Phone number is required', false); return; }
+
+  const btn = $('scBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined icon-sm">hourglass_top</span> Dialing…'; }
+
+  const r = await api(`/api/employees/${employeeId}/single-call`, {
+    method: 'POST',
+    body: JSON.stringify({phone, name: name||null, notes: notes||null}),
+  });
+
+  if (r.ok) {
+    toast(`✓ Call initiated to ${r.phone || phone}`);
+    hideModal();
+    setTimeout(() => go('live-calls'), 800);
+  } else {
+    toast(r.error || 'Failed to initiate call', false);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined icon-sm">phone</span> Call Now'; }
+  }
+}
+
+function showExcelCampaignModal(employeeId, employeeName) {
+  const today = new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'});
+  showModal(`
+    <div class="bg-white rounded-2xl p-6 shadow-modal" style="width:500px;max-width:calc(100vw-32px)">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
+          <span class="material-symbols-outlined text-white">upload_file</span>
+        </div>
+        <div>
+          <h3 class="text-[16px] font-bold text-on-surface">Excel Campaign</h3>
+          <p class="text-[11px] text-on-surface-variant">Agent: <strong>${esc(employeeName)}</strong></p>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Campaign Name *</label>
+          <input class="input" id="ecName" placeholder="November Outreach" value="Excel Campaign ${today}"/>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Contact File *</label>
+          <div id="ecDropZone"
+            class="border-2 border-dashed border-surface-container-high rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary-container/10 transition-all"
+            onclick="$('ecFile').click()"
+            ondragover="event.preventDefault();this.classList.add('border-primary','bg-primary-container/10')"
+            ondragleave="this.classList.remove('border-primary','bg-primary-container/10')"
+            ondrop="event.preventDefault();this.classList.remove('border-primary','bg-primary-container/10');handleEcDrop(event)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:36px">table_view</span>
+            <p class="text-[13px] font-semibold text-on-surface-variant mt-2">Drop file here or click to browse</p>
+            <p class="text-[11px] text-on-surface-variant mt-1 mb-2">Accepts .xlsx · .xls · .csv</p>
+            <div id="ecFileName" class="hidden mt-2 px-3 py-1.5 bg-primary-container text-primary text-[12px] font-semibold rounded-lg inline-flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:14px">check_circle</span>
+              <span id="ecFileNameText"></span>
+            </div>
+          </div>
+          <input type="file" id="ecFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="onEcFileChange(this)"/>
+        </div>
+
+        <div class="bg-surface-container-low rounded-xl p-3 text-[11px] text-on-surface-variant leading-relaxed">
+          <div class="flex items-center gap-1.5 mb-1 font-semibold text-on-surface">
+            <span class="material-symbols-outlined text-primary" style="font-size:14px">info</span> Format guide
+          </div>
+          Row 1 = headers (e.g. <code class="bg-surface-container px-1 rounded">phone</code>, <code class="bg-surface-container px-1 rounded">name</code>).
+          Row 2 onwards = data. Duplicates are skipped automatically.
+        </div>
+      </div>
+
+      <div class="flex gap-2 mt-5">
+        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
+        <button id="ecBtn" onclick="doExcelCampaign(${employeeId})" class="btn-primary flex-1">
+          <span class="material-symbols-outlined icon-sm">rocket_launch</span> Launch Campaign
+        </button>
+      </div>
+    </div>
+  `);
+}
+
+function onEcFileChange(input) {
+  if (input.files[0]) _setEcFile(input.files[0].name);
+}
+function handleEcDrop(e) {
+  const f = e.dataTransfer.files[0];
+  if (f) { $('ecFile').files = e.dataTransfer.files; _setEcFile(f.name); }
+}
+function _setEcFile(name) {
+  const el = $('ecFileName'); const nt = $('ecFileNameText');
+  if (el && nt) { nt.textContent = name; el.classList.remove('hidden'); }
+}
+
+async function doExcelCampaign(employeeId) {
+  const nameEl = $('ecName');
+  const fileEl = $('ecFile');
+  const btn = $('ecBtn');
+  const campaignName = nameEl?.value?.trim() || 'Excel Campaign';
+  if (!fileEl?.files[0]) { toast('Please select a file', false); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined icon-sm" style="animation:spin 1s linear infinite;display:inline-block">refresh</span> Uploading…';
+
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('campaign_name', campaignName);
+
+  try {
+    const res = await fetch(`/dashboard/api/employees/${employeeId}/excel-campaign`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: fd,
+    });
+    if (res.status === 401) { location.href = '/login'; return; }
+    const r = await res.json();
+    if (r.ok) {
+      toast(`Campaign launched! ${r.added} contacts queued${r.skipped ? `, ${r.skipped} skipped` : ''}.`);
+      hideModal();
+      go('all-campaigns');
+    } else {
+      toast(r.error || 'Upload failed', false);
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-symbols-outlined icon-sm">rocket_launch</span> Launch Campaign';
+    }
+  } catch (e) {
+    toast('Upload error: ' + e.message, false);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined icon-sm">rocket_launch</span> Launch Campaign';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GLOBAL SEARCH
+// ═══════════════════════════════════════════════════════════
+async function runSearch(q) {
+  if(!q.trim()) { $('searchBox').classList.add('hidden'); return; }
+  const data = await api('/api/search?q='+encodeURIComponent(q));
+  const items = [
+    ...(data.campaigns||[]).map(c=>`<div class="p-2 hover:bg-surface-container-low rounded-lg cursor-pointer" onclick="go('all-campaigns')"><span class="material-symbols-outlined icon-sm text-primary">campaign</span> ${esc(c.name)} <span class="badge badge-gray ml-1">${c.status}</span></div>`),
+    ...(data.leads||[]).map(l=>`<div class="p-2 hover:bg-surface-container-low rounded-lg cursor-pointer" onclick="go('contact-lists')"><span class="material-symbols-outlined icon-sm text-secondary">person</span> ${esc(l.name||l.phone)}</div>`),
+    ...(data.agents||[]).map(a=>`<div class="p-2 hover:bg-surface-container-low rounded-lg cursor-pointer" onclick="go('agent-studio')"><span class="material-symbols-outlined icon-sm text-tertiary">record_voice_over</span> ${esc(a.name)}</div>`),
+  ];
+  const sb = $('searchBox');
+  sb.innerHTML = items.length ? items.join('') : '<div class="p-3 text-center text-on-surface-variant text-[12px]">No results</div>';
+  sb.classList.remove('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE COUNT UPDATER
+// ═══════════════════════════════════════════════════════════
+let _liveCountTimer = null;
+async function updateLiveCount() {
+  try {
+    const d = await api('/api/autocall/status');
+    const c = $('liveCount');
+    if(c) c.textContent = (d.in_flight||0) + ' Live';
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// ROUTER
+// ═══════════════════════════════════════════════════════════
+let _currentView = null;
+
+async function navigate() {
+  const r = route();
+  if(_currentView === r) return;
+  _currentView = r;
+
+  // Stop live calls refresh if leaving that view
+  if(r !== 'live-calls' && _liveCallsRefresh) {
+    clearInterval(_liveCallsRefresh);
+    _liveCallsRefresh = null;
+  }
+
+  setActiveNav(r);
+  window.scrollTo(0,0);
+
+  switch(r) {
+    case 'dashboard': return renderDashboard();
+    case 'live-calls': return renderLiveCalls();
+    case 'appointments': return renderAppointments();
+    case 'all-campaigns': return renderAllCampaigns();
+    case 'create-campaign': return renderCreateCampaign();
+    case 'contact-lists': return renderContactLists();
+    case 'call-history': return renderCallHistory();
+    case 'employees': return renderEmployees();
+    case 'agent-studio': return renderAgentStudio();
+    case 'team': return renderTeam();
+    case 'settings': return renderSettings();
+    default: return renderDashboard();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  buildNav();
+  navigate();
+  window.addEventListener('hashchange', () => { _currentView = null; navigate(); });
+  // Force correct view on direct hash navigation (e.g. link from another page)
+  if (location.hash && location.hash !== '#dashboard') { _currentView = null; navigate(); }
+
+  // Global search
+  const gs = $('globalSearch');
+  if(gs) {
+    gs.addEventListener('input', e => runSearch(e.target.value));
+    document.addEventListener('click', e => {
+      if(!gs.contains(e.target)) $('searchBox').classList.add('hidden');
+    });
+  }
+
+  // Live count every 10s
+  _liveCountTimer = setInterval(updateLiveCount, 10000);
+
+  // Keyboard shortcut
+  document.addEventListener('keydown', e => {
+    if((e.metaKey||e.ctrlKey) && e.key==='k') {
+      e.preventDefault();
+      $('globalSearch')?.focus();
+    }
+    if(e.key==='Escape') {
+      $('searchBox')?.classList.add('hidden');
+      hideModal();
+    }
+  });
+});
+</script>
+</body>
+</html>
