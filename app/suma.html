@@ -79,6 +79,83 @@ body{overscroll-behavior:none}
 .sidebar-section-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#79767d;padding:12px 12px 4px}
 .range-track{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:#e4e1f5;outline:none}
 .range-track::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#3525cd;cursor:pointer;box-shadow:0 2px 6px rgba(53,37,205,.3)}
+
+/* ═══════════════════════════════════════════════════════════
+   PHONE UI / DIALER ENCLOSURE & CONTROLS
+   ═══════════════════════════════════════════════════════════ */
+.phone-case {
+  width: 370px;
+  max-width: 100%;
+  height: 720px;
+  background: #090d16;
+  border-radius: 46px;
+  padding: 10px;
+  box-shadow: 0 30px 70px -15px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08), inset 0 0 0 2px rgba(255,255,255,0.12);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+.phone-screen {
+  flex: 1;
+  background: #020617;
+  border-radius: 38px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.phone-notch {
+  width: 120px;
+  height: 26px;
+  background: #090d16;
+  border-radius: 14px;
+  margin: 6px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  z-index: 20;
+  box-shadow: inset 0 -1px 2px rgba(0,0,0,0.6);
+}
+.dial-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  cursor: pointer;
+}
+.dial-btn:hover { background: #334155; transform: scale(1.06); border-color: rgba(255,255,255,0.15); }
+.dial-btn:active { background: #475569; transform: scale(0.92); }
+.dial-btn .digit { font-size: 22px; font-weight: 600; color: #f8fafc; line-height: 1; }
+.dial-btn .sub { font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em; color: #94a3b8; margin-top: 2px; }
+
+/* In-Call Equalizer Waves */
+.eq-container { display: flex; align-items: center; gap: 3.5px; height: 28px; }
+.eq-bar {
+  width: 3.5px;
+  border-radius: 3px;
+  background: #10b981;
+  animation: eq-bounce 1s ease-in-out infinite alternate;
+}
+@keyframes eq-bounce {
+  0% { height: 4px; opacity: 0.4; }
+  100% { height: 26px; opacity: 1; }
+}
+.eq-bar:nth-child(1) { animation-delay: 0.1s; height: 8px; }
+.eq-bar:nth-child(2) { animation-delay: 0.4s; height: 20px; }
+.eq-bar:nth-child(3) { animation-delay: 0.2s; height: 26px; }
+.eq-bar:nth-child(4) { animation-delay: 0.5s; height: 14px; }
+.eq-bar:nth-child(5) { animation-delay: 0.3s; height: 18px; }
+
 </style>
 </head>
 <body class="bg-surface font-sans text-on-surface">
@@ -126,6 +203,9 @@ body{overscroll-behavior:none}
       <span class="pulse-ring pulse-green"></span>
       <span id="liveCount">0 Live</span>
     </div>
+    <button onclick="openPhoneDialer()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[12px] font-semibold rounded-full flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95">
+      <span class="material-symbols-outlined" style="font-size:15px">dialpad</span> Phone
+    </button>
     <button onclick="go('live-calls')" class="px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-full flex items-center gap-1.5 hover:bg-primary/90 transition-colors">
       <span class="material-symbols-outlined" style="font-size:14px">phone_in_talk</span> Monitor
     </button>
@@ -140,6 +220,11 @@ body{overscroll-behavior:none}
 <main class="pl-60 pt-14 min-h-screen">
   <div id="view" class="p-5"></div>
 </main>
+
+<!-- FLOATING PHONE DIALER BUTTON -->
+<button id="floatingDialerBtn" onclick="openPhoneDialer()" title="Open Phone Dialer" class="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+  <span class="material-symbols-outlined text-[26px]">dialpad</span>
+</button>
 
 <div id="toast" class="toast"></div>
 <div id="modal" class="modal-bg hidden" onclick="closeModal(event)"></div>
@@ -183,6 +268,7 @@ async function doLogout() {
 const NAV = [
   {label:"Operations",items:[
     {id:"dashboard",icon:"grid_view",title:"Dashboard"},
+    {id:"dialer",icon:"dialpad",title:"Phone Dialer"},
     {id:"live-calls",icon:"phone_in_talk",title:"Live Calls"},
     {id:"appointments",icon:"calendar_month",title:"Appointments"},
   ]},
@@ -248,7 +334,7 @@ function setActiveNav(r) {
   document.querySelectorAll('.nav-link').forEach(a => {
     a.classList.toggle('active', a.dataset.route === r);
   });
-  const titles = {dashboard:'Dashboard','live-calls':'Live Calls',appointments:'Appointments','all-campaigns':'All Campaigns','create-campaign':'Create Campaign','contact-lists':'Contact Lists','call-history':'Call History',employees:'Employees','agent-studio':'Voice Agent Studio',team:'Team & Permissions',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',dialer:'Phone Dialer','live-calls':'Live Calls',appointments:'Appointments','all-campaigns':'All Campaigns','create-campaign':'Create Campaign','contact-lists':'Contact Lists','call-history':'Call History',employees:'Employees','agent-studio':'Voice Agent Studio',team:'Team & Permissions',settings:'Settings'};
   $('crumbs').textContent = titles[r] || r;
 }
 
@@ -1819,127 +1905,567 @@ async function renderEmployees() {
   `;
 }
 
-function showSingleCallModal(employeeId, employeeName) {
-  const emp = (_cachedEmployees || []).find(e => e.id === employeeId) || {};
-  const defaultGreeting = emp.greeting || `నమస్కారం అండి, నేను ${employeeName} మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?`;
+// ═══════════════════════════════════════════════════════════
+// PHONE UI & INTERACTIVE WEB DIALER
+// ═══════════════════════════════════════════════════════════
+let _activePhoneCall = null;
+let _phoneTimerInterval = null;
+let _phoneTranscriptInterval = null;
 
-  showModal(`
-    <div class="bg-white rounded-2xl p-6 shadow-modal" style="width:480px;max-width:calc(100vw-32px)">
-      <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-          <span class="material-symbols-outlined text-white">phone</span>
-        </div>
-        <div>
-          <h3 class="text-[16px] font-bold text-on-surface">Single Call</h3>
-          <p class="text-[11px] text-on-surface-variant">Agent: <strong>${esc(employeeName)}</strong> · ${emp.language ? emp.language.toUpperCase() : 'TE'}</p>
-        </div>
-      </div>
-
-      <div class="space-y-3.5">
-        <div>
-          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Phone Number *</label>
-          <div class="relative">
-            <span class="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant" style="font-size:16px">call</span>
-            <input class="input pl-9" id="scPhone" placeholder="+91 98765 43210" type="tel" autofocus/>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Contact Name</label>
-          <input class="input" id="scName" placeholder="Optional caller name"/>
-        </div>
-
-        <div>
-          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Call Mode</label>
-          <select id="scMode" class="input" onchange="_toggleScGreeting(this.value)">
-            <option value="ai_agent" selected>🎙️ AI Employee (Live Conversational AI — STT + LLM + TTS)</option>
-            <option value="broadcast">📻 Pre-recorded Audio Broadcast</option>
-          </select>
-        </div>
-
-        <div id="scGreetingWrap">
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Predefined Opening Ask / Greeting</label>
-            <span class="text-[10px] text-primary cursor-pointer hover:underline" onclick="_setScPreset('clear')">Clear (AI Decides)</span>
-          </div>
-
-          <!-- Quick presets for opening questions -->
-          <div class="flex flex-wrap gap-1.5 mb-2">
-            <button type="button" onclick="_setScPreset('intro')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">👋 Intro</button>
-            <button type="button" onclick="_setScPreset('appointment')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">📅 Appointment</button>
-            <button type="button" onclick="_setScPreset('campaign')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">🗳️ Campaign</button>
-            <button type="button" onclick="_setScPreset('english')" class="text-[11px] px-2 py-0.5 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container/20 text-on-surface transition-all">🇬🇧 English</button>
-          </div>
-
-          <textarea class="textarea" id="scGreeting" rows="2" placeholder="Predefined question or greeting the agent asks upon answering…">${esc(defaultGreeting)}</textarea>
-          <p class="text-[10px] text-on-surface-variant mt-1">The AI agent speaks this immediately when the call connects, then listens for the caller's reply.</p>
-        </div>
-
-        <div>
-          <label class="block text-[11px] font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">Notes</label>
-          <textarea class="textarea" id="scNotes" rows="1" placeholder="Optional context or instructions…"></textarea>
-        </div>
-      </div>
-
-      <div class="flex gap-2 mt-5">
-        <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
-        <button id="scBtn" onclick="doSingleCall(${employeeId})" class="btn-primary flex-1">
-          <span class="material-symbols-outlined icon-sm">phone</span> Call Now
-        </button>
-      </div>
-    </div>
-  `);
-  setTimeout(() => $('scPhone')?.focus(), 50);
+function _playDtmf(f1, f2) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.frequency.value = f1;
+    osc2.frequency.value = f2;
+    gain.gain.value = 0.05;
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start();
+    osc2.start();
+    setTimeout(() => { osc1.stop(); osc2.stop(); ctx.close(); }, 90);
+  } catch(e) {}
 }
 
-function _toggleScGreeting(mode) {
-  const wrap = $('scGreetingWrap');
-  if (wrap) wrap.style.display = (mode === 'broadcast') ? 'none' : 'block';
+function _phonePress(digit, f1, f2) {
+  if (f1 && f2) _playDtmf(f1, f2);
+  const input = $('pPhone');
+  if (!input) return;
+  input.value = (input.value || '') + digit;
+  input.focus();
 }
 
-function _setScPreset(type) {
-  const g = $('scGreeting');
-  if (!g) return;
-  if (type === 'clear') {
-    g.value = '';
-  } else if (type === 'intro') {
-    g.value = 'నమస్కారం అండి, నేను సుమ మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?';
-  } else if (type === 'appointment') {
-    g.value = 'నమస్కారం అండి, మీ అపాయింట్‌మెంట్ మరియు సైట్ విజిట్ బుకింగ్ గురించి కాల్ చేసాను. మీకు ఏ సమయం అనుకూలంగా ఉంటుంది?';
-  } else if (type === 'campaign') {
-    g.value = 'హలో అండి, నేను క్యాంపెయిన్ టీమ్ నుండి మాట్లాడుతున్నాను. రాబోయే ఎన్నికల్లో మీ మద్దతు మరియు విలువైన సూచనల కోసం కాల్ చేశాను.';
-  } else if (type === 'english') {
-    g.value = 'Hello! I am calling from our team regarding your inquiry. Do you have a quick minute to speak?';
+function _phoneBackspace() {
+  const input = $('pPhone');
+  if (!input) return;
+  input.value = input.value.slice(0, -1);
+  input.focus();
+}
+
+function _onPhoneAgentChange() {
+  const sel = $('pAgent');
+  const preview = $('pGreetingPreview');
+  const greetingInput = $('pGreetingVal');
+  if (!sel) return;
+  const empId = Number(sel.value);
+  const emp = (_cachedEmployees || []).find(e => e.id === empId);
+  if (emp) {
+    const g = emp.greeting || `నమస్కారం అండి, నేను ${emp.name} మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?`;
+    if (greetingInput) greetingInput.value = g;
+    if (preview) preview.textContent = g;
+    const langBadge = $('pAgentLang');
+    if (langBadge) langBadge.textContent = (emp.language || 'TE').toUpperCase();
   }
 }
 
-async function doSingleCall(employeeId) {
-  const phone = $('scPhone')?.value?.trim();
-  const name = $('scName')?.value?.trim();
-  const notes = $('scNotes')?.value?.trim();
-  const mode = $('scMode')?.value || 'ai_agent';
-  const greeting = $('scGreeting')?.value?.trim() || '';
+function _setPhoneGreeting(type) {
+  const preview = $('pGreetingPreview');
+  const val = $('pGreetingVal');
+  const sel = $('pAgent');
+  const empId = Number(sel?.value);
+  const emp = (_cachedEmployees || []).find(e => e.id === empId) || {name: 'సుమ'};
+  let text = '';
+  if (type === 'intro') {
+    text = `నమస్కారం అండి, నేను ${emp.name} మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?`;
+  } else if (type === 'appointment') {
+    text = 'నమస్కారం అండి, మీ అపాయింట్‌మెంట్ మరియు సైట్ విజిట్ బుకింగ్ గురించి కాల్ చేసాను. ఏ సమయం అనుకూలంగా ఉంటుంది?';
+  } else if (type === 'campaign') {
+    text = 'హలో అండి, నేను క్యాంపెయిన్ టీమ్ నుండి మాట్లాడుతున్నాను. మీ విలువైన సపోర్ట్ గురించి మాట్లాడదామని కాల్ చేశాను.';
+  } else if (type === 'english') {
+    text = 'Hello! I am calling regarding your inquiry. Do you have a quick minute to speak?';
+  } else if (type === 'clear') {
+    text = '';
+  }
+  if (val) val.value = text;
+  if (preview) preview.textContent = text || '(AI will open conversation dynamically)';
+  const customBox = $('pCustomGreetingBox');
+  if (customBox) customBox.classList.add('hidden');
+}
 
-  if (!phone) { toast('Phone number is required', false); return; }
+function _toggleCustomGreeting() {
+  const box = $('pCustomGreetingBox');
+  if (!box) return;
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) {
+    const ta = $('pCustomGreetingText');
+    if (ta) {
+      ta.value = $('pGreetingVal')?.value || '';
+      ta.focus();
+    }
+  }
+}
 
-  const btn = $('scBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined icon-sm">hourglass_top</span> Dialing…'; }
+function _saveCustomGreeting() {
+  const ta = $('pCustomGreetingText');
+  const val = $('pGreetingVal');
+  const preview = $('pGreetingPreview');
+  if (ta && val && preview) {
+    val.value = ta.value.trim();
+    preview.textContent = val.value || '(AI will open conversation dynamically)';
+  }
+  $('pCustomGreetingBox')?.classList.add('hidden');
+}
 
-  const r = await api(`/api/employees/${employeeId}/single-call`, {
+async function _startPhoneCall() {
+  const phone = $('pPhone')?.value?.trim();
+  const name = $('pName')?.value?.trim() || null;
+  const agentSel = $('pAgent');
+  const employeeId = Number(agentSel?.value || (_cachedEmployees[0]?.id || 1));
+  const mode = $('pMode')?.value || 'ai_agent';
+  const greeting = $('pGreetingVal')?.value?.trim() || '';
+
+  if (!phone || phone.replace(/\D/g, '').length < 10) {
+    toast('Please enter a valid 10-digit phone number', false);
+    return;
+  }
+
+  const btn = $('pCallBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('opacity-75');
+    btn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:28px">progress_activity</span>';
+  }
+
+  const res = await api(`/api/employees/${employeeId}/single-call`, {
     method: 'POST',
-    body: JSON.stringify({phone, name: name||null, notes: notes||null, mode, greeting}),
+    body: JSON.stringify({ phone, name, mode, greeting }),
   });
 
-  if (r.ok) {
-    const modeLabel = mode === 'broadcast' ? 'Broadcast' : 'AI Conversation';
-    toast(`✓ ${modeLabel} call initiated to ${r.phone || phone}`);
-    hideModal();
-    setTimeout(() => go('live-calls'), 800);
-  } else {
-    toast(r.error || 'Failed to initiate call', false);
-    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined icon-sm">phone</span> Call Now'; }
+  if (!res.ok) {
+    toast(res.error || 'Failed to place call', false);
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-75');
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:32px">call</span>';
+    }
+    return;
   }
+
+  toast(`✓ Call dispatched to ${res.phone || phone}`);
+  _activePhoneCall = {
+    callId: res.call_id,
+    phone: res.phone || phone,
+    name: name || 'Caller',
+    employeeId: employeeId,
+    mode: mode,
+    startTime: Date.now(),
+  };
+
+  // Switch to in-call view inside phone
+  $('phoneDialerState')?.classList.add('hidden');
+  const inCall = $('phoneInCallState');
+  if (inCall) {
+    inCall.classList.remove('hidden');
+    $('pInCallName').textContent = name || 'Live Call';
+    $('pInCallPhone').textContent = res.phone || phone;
+    $('pInCallStatus').textContent = 'Dialing via Plivo...';
+    $('pInCallTimer').textContent = '00:00';
+    $('pInCallTranscript').innerHTML = `<div class="text-center text-[11px] text-slate-400 py-4">Connecting audio stream...</div>`;
+  }
+
+  // Notch pulse
+  $('notchIndicator')?.classList.remove('hidden');
+
+  // Start in-call timer
+  let secs = 0;
+  if (_phoneTimerInterval) clearInterval(_phoneTimerInterval);
+  _phoneTimerInterval = setInterval(() => {
+    secs++;
+    const m = String(Math.floor(secs / 60)).padStart(2, '0');
+    const s = String(secs % 60).padStart(2, '0');
+    const timerEl = $('pInCallTimer');
+    if (timerEl) timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+
+  // Poll transcript and call status
+  if (_phoneTranscriptInterval) clearInterval(_phoneTranscriptInterval);
+  _phoneTranscriptInterval = setInterval(async () => {
+    if (!_activePhoneCall) return;
+    try {
+      const live = await api('/api/live-calls');
+      const active = (live.calls || []).find(c => c.id === _activePhoneCall.callId);
+      if (active) {
+        const statusEl = $('pInCallStatus');
+        if (statusEl) {
+          statusEl.textContent = active.status === 'connected' ? 'Connected (AI Live)' : active.status.toUpperCase();
+          statusEl.className = active.status === 'connected' ? 'text-emerald-400 text-[11px] font-semibold' : 'text-amber-400 text-[11px] font-semibold';
+        }
+        if (active.turns && active.turns.length > 0) {
+          const transEl = $('pInCallTranscript');
+          if (transEl) {
+            transEl.innerHTML = active.turns.map(t => `
+              <div class="flex gap-2 ${t.role === 'agent' ? '' : 'flex-row-reverse'} mb-2">
+                <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${t.role === 'agent' ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-200'}">
+                  ${t.role === 'agent' ? 'AI' : 'U'}
+                </div>
+                <div class="max-w-[82%] px-2.5 py-1.5 rounded-xl text-[11.5px] leading-snug ${t.role === 'agent' ? 'bg-slate-800 text-slate-100 border border-slate-700' : 'bg-emerald-950 text-emerald-100 border border-emerald-800/60'}">
+                  ${esc(t.text)}
+                </div>
+              </div>
+            `).join('');
+            transEl.scrollTop = transEl.scrollHeight;
+          }
+        }
+        if (active.status === 'completed' || active.status === 'failed') {
+          _endPhoneCallView(`Call ${active.status}`);
+        }
+      }
+    } catch(e) {}
+  }, 2000);
 }
+
+function _endPhoneCallView(msg = 'Call Ended') {
+  if (_phoneTimerInterval) { clearInterval(_phoneTimerInterval); _phoneTimerInterval = null; }
+  if (_phoneTranscriptInterval) { clearInterval(_phoneTranscriptInterval); _phoneTranscriptInterval = null; }
+  $('notchIndicator')?.classList.add('hidden');
+  const statusEl = $('pInCallStatus');
+  if (statusEl) statusEl.textContent = msg;
+  setTimeout(() => {
+    $('phoneInCallState')?.classList.add('hidden');
+    $('phoneDialerState')?.classList.remove('hidden');
+    const btn = $('pCallBtn');
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-75');
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:32px">call</span>';
+    }
+    _activePhoneCall = null;
+  }, 1200);
+}
+
+async function _inCallHangup() {
+  if (!_activePhoneCall) return;
+  const cid = _activePhoneCall.callId;
+  _endPhoneCallView('Ending Call...');
+  try {
+    await api(`/api/live-calls/${cid}/end`, { method: 'POST' });
+  } catch(e) {}
+}
+
+async function _inCallBook() {
+  if (!_activePhoneCall) return;
+  const cid = _activePhoneCall.callId;
+  const r = await api(`/api/live-calls/${cid}/book`, { method: 'POST' });
+  toast(r.ok ? '✓ Appointment booked successfully!' : 'Booking failed', !!r.ok);
+}
+
+async function _inCallTransfer() {
+  if (!_activePhoneCall) return;
+  const cid = _activePhoneCall.callId;
+  const r = await api(`/api/live-calls/${cid}/transfer`, { method: 'POST', body: JSON.stringify({ desk: 'human' }) });
+  toast(r.ok ? '✓ Transferred to human agent' : 'Transfer failed', !!r.ok);
+}
+
+function buildPhoneMarkup({ selectedEmpId = null, prefillPhone = '', prefillName = '', isModal = false } = {}) {
+  const employees = _cachedEmployees || [];
+  const selectedEmp = employees.find(e => e.id === selectedEmpId) || employees[0] || { id: 1, name: 'Suma Telugu', language: 'te' };
+  const defaultGreeting = selectedEmp.greeting || `నమస్కారం అండి, నేను ${selectedEmp.name} మాట్లాడుతున్నాను. ఒక్క నిమిషం మాట్లాడగలరా?`;
+  const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  return `
+    <div class="phone-case mx-auto">
+      <!-- Dynamic Island / Speaker Notch -->
+      <div class="phone-notch">
+        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 border border-slate-700/80"></div>
+        <div class="w-12 h-1 rounded-full bg-slate-800"></div>
+        <div id="notchIndicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse hidden"></div>
+      </div>
+
+      <!-- Smartphone OLED Display -->
+      <div class="phone-screen p-4 text-slate-100 flex flex-col justify-between select-none">
+        
+        <!-- Status Bar -->
+        <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-2 mb-1.5">
+          <span>${timeStr}</span>
+          <div class="flex items-center gap-1.5 text-[12px]">
+            <span class="material-symbols-outlined" style="font-size:13px">signal_cellular_4_bar</span>
+            <span class="material-symbols-outlined" style="font-size:13px">wifi</span>
+            <span class="material-symbols-outlined" style="font-size:13px">battery_full</span>
+          </div>
+        </div>
+
+        <!-- ════════ DIALER VIEW (STATE A) ════════ -->
+        <div id="phoneDialerState" class="flex-1 flex flex-col justify-between">
+          
+          <!-- Agent Card & Mode Switch -->
+          <div class="bg-slate-900/90 rounded-2xl p-2.5 border border-slate-800 shadow-inner">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[9.5px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span> AI Voice Agent
+              </span>
+              <span id="pAgentLang" class="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/80 uppercase">
+                ${(selectedEmp.language || 'TE').toUpperCase()}
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="pAgent" onchange="_onPhoneAgentChange()" class="flex-1 bg-slate-950 text-slate-100 text-[12px] font-semibold px-2 py-1.5 rounded-xl border border-slate-800 focus:outline-none focus:border-emerald-500">
+                ${employees.map(e => `
+                  <option value="${e.id}" ${e.id === selectedEmp.id ? 'selected' : ''}>${esc(e.name)} (${(e.language || 'TE').toUpperCase()})</option>
+                `).join('')}
+              </select>
+              <select id="pMode" class="bg-slate-950 text-slate-300 text-[11px] px-2 py-1.5 rounded-xl border border-slate-800 focus:outline-none">
+                <option value="ai_agent" selected>🎙️ AI</option>
+                <option value="broadcast">📻 Audio</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Phone Number & Contact Input -->
+          <div class="text-center py-1">
+            <input id="pName" placeholder="Recipient Name (Optional)" value="${esc(prefillName)}"
+              class="text-center bg-transparent text-slate-400 text-[11.5px] focus:outline-none focus:text-slate-200 placeholder:text-slate-600 w-full mb-0.5"/>
+            <div class="flex items-center justify-center relative min-h-[42px] px-2">
+              <input id="pPhone" type="tel" placeholder="Enter number" value="${esc(prefillPhone)}"
+                class="bg-transparent text-center text-[24px] font-bold tracking-wider text-white focus:outline-none w-full font-mono placeholder:text-slate-700" autofocus/>
+              <button type="button" onclick="_phoneBackspace()" class="absolute right-2 text-slate-500 hover:text-slate-200 p-1 transition-colors active:scale-90">
+                <span class="material-symbols-outlined" style="font-size:20px">backspace</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Dial Pad Grid (3x4) with DTMF audio -->
+          <div class="grid grid-cols-3 gap-y-2 gap-x-4 place-items-center px-3 my-0.5">
+            <button type="button" onclick="_phonePress('1', 697, 1209)" class="dial-btn"><span class="digit">1</span><span class="sub">&nbsp;</span></button>
+            <button type="button" onclick="_phonePress('2', 697, 1336)" class="dial-btn"><span class="digit">2</span><span class="sub">ABC</span></button>
+            <button type="button" onclick="_phonePress('3', 697, 1477)" class="dial-btn"><span class="digit">3</span><span class="sub">DEF</span></button>
+
+            <button type="button" onclick="_phonePress('4', 770, 1209)" class="dial-btn"><span class="digit">4</span><span class="sub">GHI</span></button>
+            <button type="button" onclick="_phonePress('5', 770, 1336)" class="dial-btn"><span class="digit">5</span><span class="sub">JKL</span></button>
+            <button type="button" onclick="_phonePress('6', 770, 1477)" class="dial-btn"><span class="digit">6</span><span class="sub">MNO</span></button>
+
+            <button type="button" onclick="_phonePress('7', 852, 1209)" class="dial-btn"><span class="digit">7</span><span class="sub">PQRS</span></button>
+            <button type="button" onclick="_phonePress('8', 852, 1336)" class="dial-btn"><span class="digit">8</span><span class="sub">TUV</span></button>
+            <button type="button" onclick="_phonePress('9', 852, 1477)" class="dial-btn"><span class="digit">9</span><span class="sub">WXYZ</span></button>
+
+            <button type="button" onclick="_phonePress('*', 941, 1209)" class="dial-btn"><span class="digit">*</span><span class="sub">&nbsp;</span></button>
+            <button type="button" onclick="_phonePress('0', 941, 1336)" class="dial-btn"><span class="digit">0</span><span class="sub">+</span></button>
+            <button type="button" onclick="_phonePress('#', 941, 1477)" class="dial-btn"><span class="digit">#</span><span class="sub">&nbsp;</span></button>
+          </div>
+
+          <!-- Predefined Opening Ask Drawer -->
+          <div class="px-1 mt-1">
+            <div class="flex items-center justify-between text-[10px] text-slate-400 mb-1 px-1">
+              <span class="font-semibold uppercase tracking-wider">Opening Ask</span>
+              <div class="flex gap-1.5">
+                <span class="text-emerald-400 cursor-pointer hover:underline" onclick="_setPhoneGreeting('intro')">Intro</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-emerald-400 cursor-pointer hover:underline" onclick="_setPhoneGreeting('appointment')">Book</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-emerald-400 cursor-pointer hover:underline" onclick="_toggleCustomGreeting()">Edit</span>
+              </div>
+            </div>
+
+            <!-- Greeting Preview Pill -->
+            <div id="pGreetingPreview" onclick="_toggleCustomGreeting()" class="bg-slate-900/80 text-slate-300 text-[10.5px] p-2 rounded-xl border border-slate-800 truncate cursor-pointer hover:border-slate-700 transition-colors">
+              ${esc(defaultGreeting)}
+            </div>
+            <input type="hidden" id="pGreetingVal" value="${esc(defaultGreeting)}"/>
+
+            <!-- Hidden Custom Greeting Drawer -->
+            <div id="pCustomGreetingBox" class="hidden mt-1.5 bg-slate-900 p-2 rounded-xl border border-slate-700 shadow-lg">
+              <textarea id="pCustomGreetingText" rows="2" class="w-full bg-slate-950 text-slate-200 text-[11px] p-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-emerald-500 leading-snug" placeholder="Custom opening greeting or question..."></textarea>
+              <div class="flex justify-end gap-1.5 mt-1">
+                <button type="button" onclick="_setPhoneGreeting('clear')" class="text-[10px] text-slate-400 px-2 py-0.5 rounded hover:bg-slate-800">Clear</button>
+                <button type="button" onclick="_saveCustomGreeting()" class="text-[10px] bg-emerald-600 text-white font-semibold px-2.5 py-0.5 rounded hover:bg-emerald-500">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Big Action Button (Green Call Button) -->
+          <div class="flex items-center justify-center pt-2">
+            <button id="pCallBtn" type="button" onclick="_startPhoneCall()" class="w-15 h-15 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-90 text-white shadow-lg shadow-emerald-500/30 flex items-center justify-center transition-all">
+              <span class="material-symbols-outlined" style="font-size:32px">call</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ════════ IN-CALL VIEW (STATE B) ════════ -->
+        <div id="phoneInCallState" class="hidden flex-1 flex flex-col justify-between py-1">
+          
+          <!-- Top: Callee Info & Live Timer -->
+          <div class="text-center pt-2">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 mx-auto flex items-center justify-center shadow-lg relative mb-2">
+              <span class="material-symbols-outlined text-white text-[28px]">person</span>
+              <span class="absolute inset-0 rounded-full border-2 border-emerald-400 animate-ping opacity-75"></span>
+            </div>
+            <div id="pInCallName" class="text-[16px] font-bold text-white">Caller</div>
+            <div id="pInCallPhone" class="text-[12px] text-slate-400 font-mono">+91 00000 00000</div>
+            
+            <div class="flex items-center justify-center gap-2 mt-2">
+              <div class="eq-container">
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+              </div>
+              <span id="pInCallStatus" class="text-emerald-400 text-[11px] font-semibold">Connecting...</span>
+              <span id="pInCallTimer" class="text-[11px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800">00:00</span>
+            </div>
+          </div>
+
+          <!-- Center: Real-Time Rolling Transcript Preview -->
+          <div class="flex-1 my-3 bg-slate-950/80 rounded-2xl p-2.5 border border-slate-800 overflow-hidden flex flex-col">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 flex items-center justify-between">
+              <span>Live Conversation</span>
+              <span class="text-emerald-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Streaming</span>
+            </div>
+            <div id="pInCallTranscript" class="flex-1 overflow-y-auto space-y-2 pr-1" style="max-height: 240px;">
+              <div class="text-center text-[11px] text-slate-500 py-6">Conversation transcript will stream live here...</div>
+            </div>
+          </div>
+
+          <!-- Bottom: In-Call Action Bar (Book, Transfer, Hangup) -->
+          <div class="grid grid-cols-3 gap-3 place-items-center px-4 pt-1">
+            <!-- Book Appointment -->
+            <button type="button" onclick="_inCallBook()" title="Book Appointment" class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <div class="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center active:scale-90 transition-all border border-slate-700">
+                <span class="material-symbols-outlined text-[20px] text-emerald-400">calendar_month</span>
+              </div>
+              <span class="text-[9.5px]">Book</span>
+            </button>
+
+            <!-- End Call (Big Red) -->
+            <button type="button" onclick="_inCallHangup()" title="End Call" class="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-500 active:scale-90 text-white shadow-lg shadow-rose-600/40 flex items-center justify-center transition-all">
+              <span class="material-symbols-outlined text-[28px]">call_end</span>
+            </button>
+
+            <!-- Transfer -->
+            <button type="button" onclick="_inCallTransfer()" title="Transfer to Desk" class="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors">
+              <div class="w-11 h-11 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center active:scale-90 transition-all border border-slate-700">
+                <span class="material-symbols-outlined text-[20px] text-amber-400">transfer_within_a_station</span>
+              </div>
+              <span class="text-[9.5px]">Transfer</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function openPhoneDialer(employeeId = null, employeeName = null, prefillPhone = '', prefillName = '') {
+  showModal(`
+    <div class="relative">
+      <button onclick="hideModal()" class="absolute -top-3 -right-3 z-50 w-8 h-8 rounded-full bg-slate-800 text-white border border-slate-600 flex items-center justify-center hover:bg-slate-700 shadow-lg">
+        <span class="material-symbols-outlined text-[18px]">close</span>
+      </button>
+      ${buildPhoneMarkup({ selectedEmpId: employeeId, prefillPhone, prefillName, isModal: true })}
+    </div>
+  `);
+  setTimeout(() => $('pPhone')?.focus(), 100);
+}
+
+function showSingleCallModal(employeeId, employeeName) {
+  openPhoneDialer(employeeId, employeeName);
+}
+
+// Full page view for #dialer route
+async function renderPhoneDialerView() {
+  $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading phone dialer…</div>`;
+  const [employees, calls, leads] = await Promise.all([
+    api('/api/employees'),
+    api('/api/calls'),
+    api('/api/leads'),
+  ]);
+  _cachedEmployees = Array.isArray(employees) ? employees : [];
+
+  $('view').innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h1 class="text-xl font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-emerald-600">dialpad</span> AI Phone Dialer
+          </h1>
+          <p class="text-sm text-on-surface-variant mt-0.5">Place conversational voice calls, test prompts, and stream live transcripts</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Plivo SIP Trunk Connected
+          </span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left Column: The Interactive Smartphone (5 Cols) -->
+        <div class="lg:col-span-5 flex justify-center sticky top-20">
+          ${buildPhoneMarkup({ selectedEmpId: employees[0]?.id || 1 })}
+        </div>
+
+        <!-- Right Column: Quick Dials, Recent Calls & Lead Contacts (7 Cols) -->
+        <div class="lg:col-span-7 space-y-5">
+          
+          <!-- Quick Call Presets / Demo Numbers -->
+          <div class="bg-white rounded-2xl p-5 border border-surface-container-high shadow-card">
+            <h3 class="text-[14px] font-bold text-on-surface mb-2 flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-[18px]">quickreply</span> Quick Dials & Presets
+            </h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="quickFillDialer('+918065591949','Test Line')" class="p-2.5 rounded-xl border border-surface-container hover:border-emerald-500 hover:bg-emerald-50/50 text-left transition-all">
+                <div class="text-[12.5px] font-semibold text-on-surface">Official ExoPhone</div>
+                <div class="text-[11px] text-on-surface-variant font-mono">+91 80655 91949</div>
+              </button>
+              <button onclick="quickFillDialer('+919876543210','Ravi Kumar')" class="p-2.5 rounded-xl border border-surface-container hover:border-emerald-500 hover:bg-emerald-50/50 text-left transition-all">
+                <div class="text-[12.5px] font-semibold text-on-surface">Ravi Kumar (Lead)</div>
+                <div class="text-[11px] text-on-surface-variant font-mono">+91 98765 43210</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Recent Outbound Calls with 1-Click Redial -->
+          <div class="bg-white rounded-2xl border border-surface-container-high shadow-card overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-surface-container-high flex items-center justify-between">
+              <h3 class="text-[14px] font-bold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[18px]">history</span> Recent Outbound Calls
+              </h3>
+              <span class="text-[11px] text-on-surface-variant">${(calls || []).length} recorded</span>
+            </div>
+            <div class="divide-y divide-surface-container max-h-[380px] overflow-y-auto">
+              ${!calls || !calls.length ? `
+                <div class="p-8 text-center text-on-surface-variant text-sm">No recent calls yet — dial your first call on the phone!</div>
+              ` : calls.slice(0, 10).map(c => `
+                <div class="p-3.5 hover:bg-surface-container-low transition-colors flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-surface-container flex items-center justify-center flex-shrink-0 text-on-surface-variant">
+                      <span class="material-symbols-outlined text-[18px]">${c.status === 'completed' ? 'call_made' : c.status === 'failed' ? 'phone_missed' : 'phone'}</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[13px] font-semibold text-on-surface truncate">${esc(c.name || 'Caller')}</div>
+                      <div class="text-[11px] text-on-surface-variant font-mono">${esc(c.phone || '—')} · ${fmtDur(c.duration || 0)}</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="badge ${statusColor(c.status)}">${c.status}</span>
+                    <button onclick="quickFillDialer('${esc(c.phone || '')}','${esc(c.name || '')}')" title="Dial this contact" class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all shadow-sm">
+                      <span class="material-symbols-outlined text-[16px]">phone</span>
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function quickFillDialer(phone, name) {
+  const pInput = $('pPhone');
+  const nInput = $('pName');
+  if (pInput) pInput.value = phone;
+  if (nInput) nInput.value = name || '';
+  pInput?.focus();
+}
+
 
 function showExcelCampaignModal(employeeId, employeeName) {
   const emp = (_cachedEmployees || []).find(e => e.id === employeeId) || {};
@@ -2126,6 +2652,7 @@ async function navigate() {
     case 'contact-lists': return renderContactLists();
     case 'call-history': return renderCallHistory();
     case 'employees': return renderEmployees();
+    case 'dialer': return renderPhoneDialerView();
     case 'agent-studio': return renderAgentStudio();
     case 'team': return renderTeam();
     case 'settings': return renderSettings();
