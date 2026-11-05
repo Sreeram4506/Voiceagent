@@ -64,6 +64,7 @@ class OpenAITTS:
                 model=self.model,
                 voice=self.voice,
                 input=text,
+                speed=1.15,  # Speak ~15% faster for natural, energetic phone conversations
                 response_format="pcm",  # raw 24kHz 16-bit mono PCM
             )
             pcm24k = response.content
