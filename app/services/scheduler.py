@@ -95,7 +95,10 @@ def dispatch_due(
         if not result.accepted and result.reason == "refused":
             # Carrier refusal: pause the campaign to protect the sender reputation.
             employee.paused = True
-        report.dialed.append(lead.id)
+        if result.accepted:
+            report.dialed.append(lead.id)
+        else:
+            report.skipped[lead.id] = result.reason or "dial_failed"
 
     session.flush()
     return report

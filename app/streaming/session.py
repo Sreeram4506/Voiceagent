@@ -99,28 +99,23 @@ class StreamSession:
         """Play pre-recorded audio or TTS greeting depending on mode."""
         self._speaking_opening = True
         try:
-            if self.mode == "ai_agent":
-                print(f"[AI-AGENT] starting conversational mode")
-                await self._respond(None)
-            else:
+            if self.mode == "broadcast":
                 audio_path = Path(__file__).parent / "campaign_audio.raw"
                 if audio_path.exists():
                     pcm = audio_path.read_bytes()
-                    print(f"[AUDIO] playing pre-recorded file: {len(pcm)} bytes")
+                    print(f"[AUDIO] playing broadcast file: {len(pcm)} bytes")
                     self.turns.append(("agent", self.script or "(pre-recorded audio)"))
                     chunk_bytes = 8000 * 2
                     chunks = [pcm[i:i + chunk_bytes] for i in range(0, len(pcm), chunk_bytes)]
                     for chunk in chunks:
                         await self._safe_send(media_message(self.stream_sid, chunk))
                         await asyncio.sleep(len(chunk) / (8000 * 2))
-                    print(f"[AUDIO] all {len(chunks)} chunks sent")
-                elif self.script:
-                    self.turns.append(("agent", self.script))
-                    self.history.append(("agent", self.script))
-                    await self._speak(self.script)
                 self.ended = True
                 if self._on_end:
                     await self._safe_end()
+            else:
+                print(f"[AI-AGENT] starting conversational mode (mode={self.mode})")
+                await self._respond(None)
         finally:
             self._speaking_opening = False
 

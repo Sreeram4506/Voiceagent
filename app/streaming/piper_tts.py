@@ -9,6 +9,7 @@ Downloaded from: https://huggingface.co/rhasspy/piper-voices
 
 import os
 import re
+from pathlib import Path
 from math import gcd
 
 import numpy as np
@@ -97,10 +98,11 @@ def _transliterate(text: str) -> str:
         return _EN_TO_TE.get(m.group(0).lower(), m.group(0))
     return _EN_PATTERN.sub(_replace, text)
 
-PIPER_VOICES_DIR = os.environ.get(
-    "PIPER_VOICES_DIR",
-    "/Users/koushikeslavath/Downloads/piper_voices",
-)
+_default_piper_dir = Path(__file__).resolve().parent.parent.parent / "models" / "piper_voices"
+if not _default_piper_dir.exists() and Path("/Users/koushikeslavath/Downloads/piper_voices").exists():
+    _default_piper_dir = Path("/Users/koushikeslavath/Downloads/piper_voices")
+
+PIPER_VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", str(_default_piper_dir))
 PIPER_VOICE = os.environ.get("PIPER_VOICE", "te_IN-venkatesh-medium")
 
 TELEPHONY_SAMPLE_RATE = 8000

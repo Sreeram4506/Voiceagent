@@ -188,14 +188,15 @@ def add_lead_manually(request: Request, payload: dict):
 
 
 @router.post("/api/recall/{lead_id}")
-def recall_lead(lead_id: int):
+def recall_lead(request: Request, lead_id: int):
     import os
     from app.config import get_settings
     from app.providers.mock import MockTelephony
     from app.services.scheduler import dispatch_due
+    tid = _require_tid(request)
 
     with SessionLocal() as db:
-        lead = db.get(Lead, lead_id)
+        lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tid).first()
         if not lead:
             return {"error": "Lead not found"}
         lead.status = LeadStatus.NEW
@@ -360,15 +361,16 @@ def _auto_call_loop(tenant_id: int):
                     _auto_call_active[tenant_id] = False
                     break
 
-                stale_cutoff = datetime.now(timezone.utc) - timedelta(seconds=45)
-                stale = db.query(Call).filter(
+                # Only time out calls stuck in DIALING state for > 2 minutes (no answer/network drop)
+                dialing_timeout = datetime.now(timezone.utc) - timedelta(seconds=120)
+                stale_dialing = db.query(Call).filter(
                     Call.tenant_id == tenant_id,
-                    Call.status.in_([CallStatus.DIALING, CallStatus.CONNECTED]),
-                    Call.started_at < stale_cutoff,
+                    Call.status == CallStatus.DIALING,
+                    Call.started_at < dialing_timeout,
                 ).all()
-                for c in stale:
-                    c.status = CallStatus.COMPLETED
-                if stale:
+                for c in stale_dialing:
+                    c.status = CallStatus.NO_ANSWER
+                if stale_dialing:
                     db.commit()
 
                 in_flight = db.query(Call).filter(
@@ -486,9 +488,10 @@ def reset_all_leads(request: Request):
 
 
 @router.put("/api/lead/{lead_id}")
-def update_lead(lead_id: int, payload: dict):
+def update_lead(request: Request, lead_id: int, payload: dict):
+    tid = _require_tid(request)
     with SessionLocal() as db:
-        lead = db.get(Lead, lead_id)
+        lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tid).first()
         if not lead:
             return {"error": "Lead not found"}
         if "name" in payload:
@@ -497,7 +500,7 @@ def update_lead(lead_id: int, payload: dict):
             phone = _to_e164(payload["phone"])
             if len(phone) < 12:
                 return {"error": "Invalid phone number"}
-            existing = db.query(Lead).filter(Lead.phone_e164 == phone, Lead.id != lead_id).first()
+            existing = db.query(Lead).filter(Lead.tenant_id == tid, Lead.phone_e164 == phone, Lead.id != lead_id).first()
             if existing:
                 return {"error": "Phone number already exists"}
             lead.phone_e164 = phone
@@ -513,9 +516,10 @@ def update_lead(lead_id: int, payload: dict):
 
 
 @router.delete("/api/lead/{lead_id}")
-def delete_lead(lead_id: int):
+def delete_lead(request: Request, lead_id: int):
+    tid = _require_tid(request)
     with SessionLocal() as db:
-        lead = db.get(Lead, lead_id)
+        lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tid).first()
         if not lead:
             return {"error": "Lead not found"}
         db.query(CallTurn).filter(
@@ -528,16 +532,17 @@ def delete_lead(lead_id: int):
 
 
 @router.post("/api/lead/{lead_id}/move")
-def move_lead(lead_id: int, payload: dict):
+def move_lead(request: Request, lead_id: int, payload: dict):
+    tid = _require_tid(request)
     direction = payload.get("direction", "up")
     with SessionLocal() as db:
-        lead = db.get(Lead, lead_id)
+        lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tid).first()
         if not lead:
             return {"error": "Lead not found"}
         if direction == "up":
-            swap = db.query(Lead).filter(Lead.id > lead_id).order_by(Lead.id.asc()).first()
+            swap = db.query(Lead).filter(Lead.tenant_id == tid, Lead.id > lead_id).order_by(Lead.id.asc()).first()
         else:
-            swap = db.query(Lead).filter(Lead.id < lead_id).order_by(Lead.id.desc()).first()
+            swap = db.query(Lead).filter(Lead.tenant_id == tid, Lead.id < lead_id).order_by(Lead.id.desc()).first()
         if not swap:
             return {"error": "Cannot move further"}
         lead.phone_e164, swap.phone_e164 = swap.phone_e164, lead.phone_e164
@@ -551,24 +556,29 @@ def move_lead(lead_id: int, payload: dict):
 
 
 @router.delete("/api/leads/bulk")
-def bulk_delete_leads(payload: dict):
+def bulk_delete_leads(request: Request, payload: dict):
+    tid = _require_tid(request)
     ids = payload.get("ids", [])
     if not ids:
         return {"error": "No IDs provided"}
     with SessionLocal() as db:
+        valid_lead_ids = [r[0] for r in db.query(Lead.id).filter(Lead.id.in_(ids), Lead.tenant_id == tid).all()]
+        if not valid_lead_ids:
+            return {"deleted": 0}
         db.query(CallTurn).filter(
-            CallTurn.call_id.in_(db.query(Call.id).filter(Call.lead_id.in_(ids)))
+            CallTurn.call_id.in_(db.query(Call.id).filter(Call.lead_id.in_(valid_lead_ids)))
         ).delete(synchronize_session=False)
-        db.query(Call).filter(Call.lead_id.in_(ids)).delete(synchronize_session=False)
-        deleted = db.query(Lead).filter(Lead.id.in_(ids)).delete(synchronize_session=False)
+        db.query(Call).filter(Call.lead_id.in_(valid_lead_ids)).delete(synchronize_session=False)
+        deleted = db.query(Lead).filter(Lead.id.in_(valid_lead_ids)).delete(synchronize_session=False)
         db.commit()
         return {"deleted": deleted}
 
 
 @router.put("/api/call/{call_id}")
-def update_call(call_id: int, payload: dict):
+def update_call(request: Request, call_id: int, payload: dict):
+    tid = _require_tid(request)
     with SessionLocal() as db:
-        call = db.get(Call, call_id)
+        call = db.query(Call).filter(Call.id == call_id, Call.tenant_id == tid).first()
         if not call:
             return {"error": "Call not found"}
         if "status" in payload:
@@ -583,9 +593,10 @@ def update_call(call_id: int, payload: dict):
 
 
 @router.delete("/api/call/{call_id}")
-def delete_call(call_id: int):
+def delete_call(request: Request, call_id: int):
+    tid = _require_tid(request)
     with SessionLocal() as db:
-        call = db.get(Call, call_id)
+        call = db.query(Call).filter(Call.id == call_id, Call.tenant_id == tid).first()
         if not call:
             return {"error": "Call not found"}
         db.query(CallTurn).filter_by(call_id=call_id).delete()
@@ -671,7 +682,11 @@ def ai_agent_call(request: Request, payload: dict):
 
         from app.providers.plivo import PlivoTelephony
         telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
-        result = telephony.dial(e164, emp.phone_number, f"{settings.public_url}/v1/plivo/status", custom_field=str(call.id))
+        caller_id = emp.phone_number or os.getenv("VA_CALLER_ID")
+        if not caller_id:
+            return {"error": "AI employee has no assigned phone number or VA_CALLER_ID configured"}
+
+        result = telephony.dial(e164, caller_id, f"{settings.public_url}/v1/plivo/status", custom_field=str(call.id))
         call.provider_call_id = result.provider_call_id or None
         if not result.accepted:
             call.status = CallStatus.REFUSED

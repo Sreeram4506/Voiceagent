@@ -10,16 +10,17 @@ Start the API server with:
 
 import io
 import os
+from pathlib import Path
 
 import numpy as np
 
 GPTSOVITS_API_URL = os.environ.get("GPTSOVITS_API_URL", "http://127.0.0.1:9880")
 
-# Default reference audio from OpenSLR Telugu dataset (speaker tem_00682)
-DEFAULT_REF_AUDIO = os.environ.get(
-    "GPTSOVITS_REF_AUDIO",
-    "/Users/koushikeslavath/Downloads/telugu_voice_data/speaker_00682/tem_00682_01850053901.wav",
-)
+_default_ref_wav = Path(__file__).resolve().parent.parent.parent / "voice_profiles" / "telugu_reference.wav"
+if not _default_ref_wav.exists() and Path("/Users/koushikeslavath/Downloads/telugu_voice_data/speaker_00682/tem_00682_01850053901.wav").exists():
+    _default_ref_wav = Path("/Users/koushikeslavath/Downloads/telugu_voice_data/speaker_00682/tem_00682_01850053901.wav")
+
+DEFAULT_REF_AUDIO = os.environ.get("GPTSOVITS_REF_AUDIO", str(_default_ref_wav))
 DEFAULT_REF_TEXT = os.environ.get(
     "GPTSOVITS_REF_TEXT",
     "ఏమయ్య ఓ సంఘపోల్లు ఎక్కడ చూస్తే ఏమీ లేదు",

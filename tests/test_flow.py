@@ -178,3 +178,35 @@ def test_outcome_webhook_is_signed_and_retried(session, tenant, employee):
     expected = hmac.new(b"whsec", body, hashlib.sha256).hexdigest()
     assert received[-1].headers["X-Signature-SHA256"] == expected
     assert json.loads(body)["outcome"] == "completed"
+
+
+def test_deliver_outcome_handles_missing_tenant_gracefully(session):
+    call = Call(id=999, tenant_id=99999, status=CallStatus.COMPLETED)
+    assert deliver_outcome(session, call) is False
+
+
+def test_finalize_call_creates_appointment_record(session, tenant, employee):
+    from app.models import Appointment
+    from app.services.call_engine import CallResult
+    lead = add_lead(session, tenant, employee, "+919999900001")
+    call = Call(tenant_id=tenant.id, lead_id=lead.id, employee_id=employee.id, status=CallStatus.CONNECTED, started_at=NOON_IST_UTC)
+    session.add(call)
+    session.flush()
+
+    res = CallResult(outcome="appointment_booked", summary="Booked", actions=["book_appointment"])
+    finalize_call(session, call, employee, lead, res, connected_seconds=60, now=NOON_IST_UTC)
+    session.flush()
+
+    appts = session.query(Appointment).filter(Appointment.call_id == call.id).all()
+    assert len(appts) == 1
+    assert appts[0].phone == "+919999900001"
+
+
+def test_refused_call_not_in_dialed_report(session, tenant, employee):
+    top_up(session, tenant.id, 100)
+    add_lead(session, tenant, employee, "+919999900009")
+    session.flush()
+    telephony = MockTelephony(script=lambda n: "refused")
+    report = dispatch_due(session, telephony, InMemoryDNDRegistry(), NOON_IST_UTC, "cb", 30)
+    assert report.dialed == []
+    assert "+919999900009" not in report.dialed

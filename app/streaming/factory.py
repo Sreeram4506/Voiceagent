@@ -25,6 +25,14 @@ def _build_tts(elevenlabs_key, deepgram_key):
         print("[Factory] Using OpenAI TTS (fallback)")
         return OpenAITTS(openai_key)
 
+    if elevenlabs_key:
+        try:
+            from app.streaming.elevenlabs_tts import ElevenLabsTTS
+            print("[Factory] Using ElevenLabs TTS")
+            return ElevenLabsTTS(elevenlabs_key)
+        except Exception as e:
+            print(f"[Factory] ElevenLabs TTS unavailable ({e}), trying fallback")
+
     if deepgram_key:
         from app.streaming.elevenlabs_tts import DeepgramTTS
         print("[Factory] Falling back to Deepgram TTS")

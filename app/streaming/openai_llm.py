@@ -78,7 +78,7 @@ class OpenAILLM:
                 "role": "user" if role == "caller" else "assistant",
                 "content": text,
             })
-        if caller_text:
+        if caller_text and (not history or history[-1] != ("caller", caller_text)):
             messages.append({"role": "user", "content": caller_text})
 
         if len(messages) == 1:

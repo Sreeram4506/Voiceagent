@@ -148,6 +148,8 @@ def root():
 
 def get_telephony() -> TelephonyProvider:
     """Plivo when credentials are configured; otherwise the offline mock."""
+    if os.getenv("TESTING") == "1":
+        return MockTelephony()
     auth_id = os.getenv("PLIVO_AUTH_ID")
     if auth_id:
         from app.providers.plivo import PlivoTelephony

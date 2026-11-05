@@ -55,6 +55,7 @@ def run_turns(
             ended_by_agent = True
             break
 
+    lead = session.get(Lead, call.lead_id) if call.lead_id else None
     if booked:
         outcome = "appointment_booked"
         _persist_appointment(session, call, employee, lead)
@@ -85,6 +86,10 @@ def finalize_call(
     charged = charge_call(session, call.tenant_id, call.id, employee.voice_tier, call.billed_seconds)
     if lead is not None:
         lead.status = LeadStatus.DONE
+    if result.outcome == "appointment_booked" or "book_appointment" in (result.actions or []):
+        existing = session.query(Appointment).filter(Appointment.call_id == call.id).first()
+        if not existing:
+            _persist_appointment(session, call, employee, lead)
     return charged
 
 

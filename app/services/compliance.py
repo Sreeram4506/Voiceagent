@@ -42,6 +42,8 @@ def check_lead(
     dnd: DNDRegistry,
     retry_delay_minutes: int,
 ) -> Decision:
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
     if lead.status == LeadStatus.DNC:
         return Decision(False, "do_not_call")
     if employee.paused:

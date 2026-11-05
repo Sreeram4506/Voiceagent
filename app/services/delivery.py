@@ -30,7 +30,7 @@ def build_payload(call: Call) -> dict:
 
 def deliver_outcome(session: Session, call: Call, client: httpx.Client | None = None, max_attempts: int = 3) -> bool:
     tenant = session.get(Tenant, call.tenant_id)
-    if not tenant.webhook_url:
+    if not tenant or not tenant.webhook_url:
         return False
 
     body = json.dumps(build_payload(call), separators=(",", ":"), sort_keys=True).encode()

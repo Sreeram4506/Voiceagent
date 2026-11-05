@@ -3,8 +3,11 @@ import tempfile
 
 # Must be set before app modules read settings.
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+os.environ["TESTING"] = "1"
 os.environ["VA_DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ.pop("EXOTEL_ACCOUNT_SID", None)
+os.environ.pop("PLIVO_AUTH_ID", None)
+os.environ.pop("PLIVO_AUTH_TOKEN", None)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
