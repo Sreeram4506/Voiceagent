@@ -346,7 +346,9 @@ def _auto_call_loop(tenant_id: int):
     from app.services.compliance import InMemoryDNDRegistry
     from app.services.scheduler import dispatch_due
 
-    engine = create_engine(get_settings().database_url, connect_args={"check_same_thread": False})
+    url = get_settings().database_url
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    engine = create_engine(url, connect_args=connect_args)
     _auto_call_stats[tenant_id] = {"total_dialed": 0, "remaining": 0}
 
     while _auto_call_active.get(tenant_id):
