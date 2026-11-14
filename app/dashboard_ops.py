@@ -560,11 +560,18 @@ def create_employee(request: Request, payload: dict):
                 return dtime(int(h), int(m))
             except Exception:
                 return fallback
+        from app.models import VoiceTier
+        tier_str = str(payload.get("voice_tier") or "standard")
+        try:
+            tier = VoiceTier(tier_str)
+        except ValueError:
+            tier = VoiceTier.STANDARD
         e = AIEmployee(
             tenant_id=tid,
             name=str(payload.get("name") or "Suma").strip(),
             language=str(payload.get("language") or "te"),
             script=str(payload.get("script") or "You are Suma, a polite Telugu voice agent."),
+            voice_tier=tier,
             max_concurrency=int(payload.get("max_concurrency") or 10),
             window_start=parse(payload.get("window_start"), dtime(9, 0)),
             window_end=parse(payload.get("window_end"), dtime(20, 0)),
@@ -579,6 +586,9 @@ def create_employee(request: Request, payload: dict):
             "pitch": payload.get("pitch") or 0,
             "archetype": payload.get("archetype") or "Female • Respectful Banking Officer",
             "dialect": payload.get("dialect") or "Coastal Andhra Telugu",
+            "voice_gender": payload.get("voice_gender") or "female",
+            "temperature": payload.get("temperature") or 0.85,
+            "speaking_style": payload.get("speaking_style") or "humanized",
         }
         _put_setting(db, extras_key, extras)
         _log(db, tid, "agent.created", e.name)
@@ -603,6 +613,12 @@ def patch_employee(request: Request, employee_id: int, payload: dict):
             e.script = payload["script"]
         if "max_concurrency" in payload:
             e.max_concurrency = int(payload["max_concurrency"])
+        if "voice_tier" in payload:
+            from app.models import VoiceTier
+            try:
+                e.voice_tier = VoiceTier(payload["voice_tier"])
+            except ValueError:
+                pass
         if "paused" in payload:
             e.paused = bool(payload["paused"])
         if "window_start" in payload:
@@ -614,7 +630,8 @@ def patch_employee(request: Request, employee_id: int, payload: dict):
         extras_key = _tenant_setting_key(tid, "employee_extras")
         extras = _setting(db, extras_key, {})
         extra = extras.get(str(e.id), {})
-        for key in ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails"):
+        for key in ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails",
+                    "voice_gender", "temperature", "speaking_style"):
             if key in payload:
                 extra[key] = payload[key]
         extras[str(e.id)] = extra

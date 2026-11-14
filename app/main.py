@@ -1,4 +1,9 @@
 import os
+
+# Prevent transformers from importing TensorFlow — avoids NumPy 2 / TF incompatibility
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("COQUI_TOS_AGREED", "1")
+
 from datetime import datetime
 from pathlib import Path
 
@@ -166,6 +171,12 @@ def get_telephony() -> TelephonyProvider:
 def _startup() -> None:
     init_db()
     ensure_default_tenant()
+    # Pre-load XTTS model in background if reference WAV exists (avoids 20s first-call delay)
+    try:
+        from app.streaming.xtts_provider import warmup
+        warmup()
+    except Exception as e:
+        print(f"[Startup] XTTS warmup skipped: {e}")
 
 
 @app.post("/v1/plivo/answer/{call_id}")

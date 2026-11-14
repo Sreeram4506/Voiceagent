@@ -1155,46 +1155,235 @@ async function resetPlayground() {
   if(pg) { pg.innerHTML = '<div class="text-center text-on-surface-variant text-[11px] py-4">Conversation reset</div>'; }
 }
 
-function showCreateAgent() {
+function showCreateAgent(editEmp) {
+  const isEdit = !!editEmp;
+  const e = editEmp || {};
+  const genderVal = e.voice_gender || 'female';
+  const tempVal = e.temperature || 0.85;
+  const styleVal = e.speaking_style || 'humanized';
+  const rateVal = e.speech_rate || 1.05;
+  const langVal = e.language || 'te';
+  const tierVal = e.voice_tier || 'standard';
+
   showModal(`
-    <div class="bg-white rounded-2xl p-6 w-96 shadow-modal">
-      <h3 class="font-bold text-lg mb-4">Create New Agent</h3>
-      <div class="space-y-3">
-        <div>
-          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Agent Name</label>
-          <input class="input" id="newAgentName" value="Suma" placeholder="Suma"/>
-        </div>
-        <div>
-          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Language</label>
-          <select class="select" id="newAgentLang">
-            <option value="te">Telugu</option>
-            <option value="hi">Hindi</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-        <div>
-          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">System Prompt</label>
-          <textarea class="textarea h-24" id="newAgentScript" placeholder="You are Suma, a warm Telugu voice agent…"></textarea>
+    <div class="bg-white rounded-2xl shadow-modal w-[520px] max-h-[92vh] overflow-y-auto" style="scrollbar-width:thin">
+      <!-- Header -->
+      <div class="sticky top-0 bg-white z-10 px-6 pt-6 pb-4 border-b border-surface-container-high">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
+            <span class="material-symbols-outlined text-white">record_voice_over</span>
+          </div>
+          <div>
+            <h3 class="font-bold text-lg text-on-surface">${isEdit ? 'Edit Agent' : 'Create New Agent'}</h3>
+            <p class="text-[11px] text-on-surface-variant">Configure voice, personality & behavior</p>
+          </div>
         </div>
       </div>
-      <div class="flex gap-2 mt-5">
+
+      <div class="px-6 py-5 space-y-5">
+        <!-- Section: Identity -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">badge</span> Identity
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Agent Name</label>
+              <input class="input" id="caName" value="${esc(e.name||'Suma')}" placeholder="Suma"/>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Language</label>
+              <select class="select" id="caLang">
+                <option value="te" ${langVal==='te'?'selected':''}>Telugu</option>
+                <option value="hi" ${langVal==='hi'?'selected':''}>Hindi</option>
+                <option value="en" ${langVal==='en'?'selected':''}>English</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Voice -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">graphic_eq</span> Voice Configuration
+          </div>
+
+          <!-- Gender Toggle -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Voice Gender</label>
+          <div class="flex gap-2 mb-3" id="caGenderWrap">
+            <button type="button" onclick="document.querySelectorAll('#caGenderWrap button').forEach(b=>b.className='flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer border-surface-container-high text-on-surface-variant hover:border-primary');this.className='flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer border-primary bg-primary text-white shadow-sm'" data-gender="female"
+              class="flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer ${genderVal==='female'?'border-primary bg-primary text-white shadow-sm':'border-surface-container-high text-on-surface-variant hover:border-primary'}">
+              <span class="material-symbols-outlined text-[16px] align-middle mr-1">female</span> Female
+            </button>
+            <button type="button" onclick="document.querySelectorAll('#caGenderWrap button').forEach(b=>b.className='flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer border-surface-container-high text-on-surface-variant hover:border-primary');this.className='flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer border-primary bg-primary text-white shadow-sm'" data-gender="male"
+              class="flex-1 py-2.5 rounded-xl border text-[13px] font-semibold transition-all cursor-pointer ${genderVal==='male'?'border-primary bg-primary text-white shadow-sm':'border-surface-container-high text-on-surface-variant hover:border-primary'}">
+              <span class="material-symbols-outlined text-[16px] align-middle mr-1">male</span> Male
+            </button>
+          </div>
+
+          <!-- Voice Tier -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Voice Engine</label>
+          <div class="grid grid-cols-3 gap-2 mb-3">
+            <label class="relative cursor-pointer">
+              <input type="radio" name="caTier" value="standard" class="peer sr-only" ${tierVal==='standard'?'checked':''}>
+              <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
+                <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">campaign</span>
+                <div class="text-[12px] font-semibold text-on-surface mt-1">Standard</div>
+                <div class="text-[10px] text-on-surface-variant">Edge Neural</div>
+              </div>
+            </label>
+            <label class="relative cursor-pointer">
+              <input type="radio" name="caTier" value="premium" class="peer sr-only" ${tierVal==='premium'?'checked':''}>
+              <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
+                <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">auto_awesome</span>
+                <div class="text-[12px] font-semibold text-on-surface mt-1">Premium</div>
+                <div class="text-[10px] text-on-surface-variant">OpenAI TTS</div>
+              </div>
+            </label>
+            <label class="relative cursor-pointer">
+              <input type="radio" name="caTier" value="voice_clone" class="peer sr-only" ${tierVal==='voice_clone'?'checked':''}>
+              <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
+                <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">mic_external_on</span>
+                <div class="text-[12px] font-semibold text-on-surface mt-1">Voice Clone</div>
+                <div class="text-[10px] text-on-surface-variant">XTTS v2</div>
+              </div>
+            </label>
+          </div>
+
+          <!-- Speech Rate -->
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-[11px] font-semibold text-on-surface-variant">Speech Rate</label>
+            <span class="text-[11px] font-mono text-primary font-bold" id="caRateVal">${rateVal}x</span>
+          </div>
+          <input type="range" id="caRate" min="0.8" max="1.3" step="0.05" value="${rateVal}" class="w-full accent-primary"
+            oninput="document.getElementById('caRateVal').textContent=this.value+'x'">
+          <div class="flex justify-between text-[9px] text-on-surface-variant -mt-0.5 mb-3">
+            <span>Slow</span><span>Natural</span><span>Fast</span>
+          </div>
+        </div>
+
+        <!-- Section: AI Personality -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">psychology</span> AI Personality
+          </div>
+
+          <!-- Speaking Style Presets -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Speaking Style</label>
+          <div class="grid grid-cols-2 gap-2 mb-3" id="caStyleWrap">
+            ${[
+              {val:'humanized', icon:'sentiment_satisfied', label:'Humanized', desc:'Natural pauses & warmth'},
+              {val:'professional', icon:'business_center', label:'Professional', desc:'Clear & structured'},
+              {val:'casual', icon:'emoji_people', label:'Casual', desc:'Friendly & relaxed'},
+              {val:'energetic', icon:'bolt', label:'Energetic', desc:'Upbeat & persuasive'},
+            ].map(s=>`
+              <button type="button" data-style="${s.val}" onclick="document.querySelectorAll('#caStyleWrap button').forEach(b=>{b.classList.remove('border-primary','bg-primary-container','shadow-sm');b.classList.add('border-surface-container-high')});this.classList.remove('border-surface-container-high');this.classList.add('border-primary','bg-primary-container','shadow-sm')"
+                class="p-3 rounded-xl border text-left transition-all cursor-pointer ${styleVal===s.val?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[18px] ${styleVal===s.val?'text-primary':'text-on-surface-variant'}">${s.icon}</span>
+                  <div>
+                    <div class="text-[12px] font-semibold text-on-surface">${s.label}</div>
+                    <div class="text-[10px] text-on-surface-variant">${s.desc}</div>
+                  </div>
+                </div>
+              </button>
+            `).join('')}
+          </div>
+
+          <!-- Temperature -->
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-[11px] font-semibold text-on-surface-variant">Creativity (Temperature)</label>
+            <span class="text-[11px] font-mono text-primary font-bold" id="caTempVal">${tempVal}</span>
+          </div>
+          <input type="range" id="caTemp" min="0.3" max="1.2" step="0.05" value="${tempVal}" class="w-full accent-primary"
+            oninput="document.getElementById('caTempVal').textContent=parseFloat(this.value).toFixed(2)">
+          <div class="flex justify-between text-[9px] text-on-surface-variant -mt-0.5 mb-3">
+            <span>Precise</span><span>Balanced</span><span>Creative</span>
+          </div>
+
+          <!-- Greeting -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Opening Greeting</label>
+          <input class="input mb-3" id="caGreeting" value="${esc(e.greeting||'')}" placeholder="Leave blank for auto-generated greeting"/>
+        </div>
+
+        <!-- Section: System Prompt -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">description</span> System Prompt
+          </div>
+          <textarea class="textarea h-28" id="caScript" placeholder="You are Suma, a warm Telugu voice agent for banking calls…">${esc(e.script||'')}</textarea>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="sticky bottom-0 bg-white border-t border-surface-container-high px-6 py-4 flex items-center gap-3">
         <button onclick="hideModal()" class="btn-ghost flex-1">Cancel</button>
-        <button onclick="createAgent()" class="btn-primary flex-1">Create</button>
+        ${isEdit ? `
+          <button onclick="_testCallFromModal(${e.id})" class="btn-ghost flex-1 !border-emerald-300 !text-emerald-700 hover:!bg-emerald-50">
+            <span class="material-symbols-outlined icon-sm">call</span> Test Call
+          </button>
+        ` : ''}
+        <button onclick="${isEdit ? `updateAgent(${e.id})` : 'createAgent()'}" class="btn-primary flex-1">
+          ${isEdit ? 'Save Changes' : 'Create Agent'}
+        </button>
       </div>
     </div>
   `);
 }
 
-async function createAgent() {
-  const payload = {
-    name: $('newAgentName')?.value||'Suma',
-    language: $('newAgentLang')?.value||'te',
-    script: $('newAgentScript')?.value||'You are Suma, a polite Telugu voice agent.',
+function _getAgentFormData() {
+  const selectedGender = document.querySelector('#caGenderWrap button.bg-primary')?.dataset?.gender || 'female';
+  const selectedStyle = document.querySelector('#caStyleWrap button.bg-primary-container')?.dataset?.style || 'humanized';
+  const selectedTier = document.querySelector('input[name="caTier"]:checked')?.value || 'standard';
+  return {
+    name: $('caName')?.value || 'Suma',
+    language: $('caLang')?.value || 'te',
+    script: $('caScript')?.value || 'You are Suma, a polite Telugu voice agent.',
+    voice_gender: selectedGender,
+    voice_tier: selectedTier,
+    speaking_style: selectedStyle,
+    temperature: parseFloat($('caTemp')?.value || '0.85'),
+    speech_rate: parseFloat($('caRate')?.value || '1.05'),
+    greeting: $('caGreeting')?.value || '',
     max_concurrency: 10,
   };
+}
+
+async function createAgent() {
+  const payload = _getAgentFormData();
   const r = await api('/api/employees', {method:'POST', body:JSON.stringify(payload)});
   if(r.id) { toast('Agent created!'); hideModal(); await renderAgentStudio(); }
   else toast('Error: '+(r.error||'failed'), false);
+}
+
+async function updateAgent(id) {
+  const payload = _getAgentFormData();
+  const r = await api('/api/employees/'+id, {method:'PATCH', body:JSON.stringify(payload)});
+  if(r.ok) { toast('Agent updated!'); hideModal(); if(typeof renderEmployees==='function') renderEmployees(); if(typeof renderAgentStudio==='function') renderAgentStudio(); }
+  else toast('Error: '+(r.error||'failed'), false);
+}
+
+async function _testCallFromModal(empId) {
+  const btn = event.target.closest('button');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined icon-sm animate-spin">progress_activity</span> Calling…';
+  const r = await api('/api/employees/'+empId+'/single-call', {
+    method:'POST', body:JSON.stringify({phone:'+918977012479', name:'Test Call', mode:'ai_agent'})
+  });
+  if(r.ok||r.accepted) { toast('Test call placed to +91 89770 12479'); btn.innerHTML='<span class="material-symbols-outlined icon-sm">call</span> Test Call'; btn.disabled=false; }
+  else { toast('Call failed: '+(r.error||'unknown'), false); btn.innerHTML='<span class="material-symbols-outlined icon-sm">call</span> Test Call'; btn.disabled=false; }
+}
+
+async function _quickTestCall(empId, btnEl) {
+  btnEl.disabled = true;
+  btnEl.innerHTML = '<span class="material-symbols-outlined icon-sm animate-spin">progress_activity</span> Calling…';
+  const r = await api('/api/employees/'+empId+'/single-call', {
+    method:'POST', body:JSON.stringify({phone:'+918977012479', name:'Test Call', mode:'ai_agent'})
+  });
+  if(r.ok||r.accepted) { toast('Test call placed to +91 89770 12479'); }
+  else { toast('Call failed: '+(r.error||'unknown'), false); }
+  btnEl.innerHTML = '<span class="material-symbols-outlined icon-sm">call</span> Test Call';
+  btnEl.disabled = false;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1848,6 +2037,10 @@ async function renderEmployees() {
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           ${employees.map(emp => {
             const langLabel = {te:'Telugu',hi:'Hindi',en:'English',ta:'Tamil',kn:'Kannada'}[emp.language] || emp.language;
+            const genderIcon = (emp.voice_gender||'female')==='male' ? 'male' : 'female';
+            const genderLabel = (emp.voice_gender||'female')==='male' ? 'Male' : 'Female';
+            const styleLabel = {humanized:'Humanized',professional:'Professional',casual:'Casual',energetic:'Energetic'}[emp.speaking_style||'humanized'] || 'Humanized';
+            const tierLabel = {standard:'Edge Neural',premium:'OpenAI TTS',voice_clone:'Voice Clone'}[emp.voice_tier||'standard'] || 'Standard';
             return `
             <div class="bg-white rounded-2xl border border-surface-container-high shadow-card hover:border-primary hover:shadow-hover transition-all flex flex-col">
               <!-- Card Header -->
@@ -1858,10 +2051,31 @@ async function renderEmployees() {
                   </div>
                   <div>
                     <div class="font-bold text-on-surface text-[15px]">${esc(emp.name)}</div>
-                    <div class="text-[11px] text-on-surface-variant mt-0.5">${langLabel} · ${emp.voice_tier || 'standard'}</div>
+                    <div class="text-[11px] text-on-surface-variant mt-0.5">${langLabel} · ${tierLabel}</div>
                   </div>
                 </div>
-                <span class="badge ${emp.paused ? 'badge-orange' : 'badge-green'} flex-shrink-0">${emp.paused ? 'Paused' : 'Active'}</span>
+                <div class="flex items-center gap-2">
+                  <button onclick='showCreateAgent(${JSON.stringify(emp).replace(/'/g,"&#39;")})' class="w-8 h-8 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container flex items-center justify-center transition-all" title="Edit Agent">
+                    <span class="material-symbols-outlined text-[16px] text-on-surface-variant hover:text-primary">edit</span>
+                  </button>
+                  <span class="badge ${emp.paused ? 'badge-orange' : 'badge-green'} flex-shrink-0">${emp.paused ? 'Paused' : 'Active'}</span>
+                </div>
+              </div>
+
+              <!-- Voice Config Tags -->
+              <div class="px-5 py-3 flex flex-wrap gap-1.5 border-b border-surface-container-high">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant">
+                  <span class="material-symbols-outlined text-[12px]">${genderIcon}</span> ${genderLabel}
+                </span>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant">
+                  <span class="material-symbols-outlined text-[12px]">thermostat</span> ${emp.temperature||0.85}
+                </span>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant">
+                  <span class="material-symbols-outlined text-[12px]">speed</span> ${emp.speech_rate||1.05}x
+                </span>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-container text-[10px] font-semibold text-on-primary-container">
+                  <span class="material-symbols-outlined text-[12px]">sentiment_satisfied</span> ${styleLabel}
+                </span>
               </div>
 
               <!-- Stats -->
@@ -1880,18 +2094,18 @@ async function renderEmployees() {
                 </div>
               </div>
 
-              ${emp.phone_number ? `
-              <div class="px-5 py-2.5 flex items-center gap-2 border-b border-surface-container-high">
-                <span class="material-symbols-outlined icon-sm text-on-surface-variant">sim_card</span>
-                <span class="text-[12px] text-on-surface-variant font-mono">${esc(emp.phone_number)}</span>
-              </div>` : ''}
-
               <!-- Action Buttons -->
               <div class="p-4 mt-auto space-y-2">
-                <button onclick="showSingleCallModal(${emp.id},'${esc(emp.name)}')"
-                  class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-surface-container-low hover:bg-primary-container text-on-surface hover:text-primary border border-surface-container-high hover:border-primary rounded-xl text-[13px] font-semibold transition-all">
-                  <span class="material-symbols-outlined icon-sm">phone</span> Single Call
-                </button>
+                <div class="flex gap-2">
+                  <button onclick="_quickTestCall(${emp.id}, this)"
+                    class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 hover:border-emerald-400 rounded-xl text-[13px] font-semibold transition-all">
+                    <span class="material-symbols-outlined icon-sm">call</span> Test Call
+                  </button>
+                  <button onclick="showSingleCallModal(${emp.id},'${esc(emp.name)}')"
+                    class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-surface-container-low hover:bg-primary-container text-on-surface hover:text-primary border border-surface-container-high hover:border-primary rounded-xl text-[13px] font-semibold transition-all">
+                    <span class="material-symbols-outlined icon-sm">dialpad</span> Dial
+                  </button>
+                </div>
                 <button onclick="showExcelCampaignModal(${emp.id},'${esc(emp.name)}')"
                   class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-white hover:bg-primary/90 rounded-xl text-[13px] font-semibold transition-all shadow-sm">
                   <span class="material-symbols-outlined icon-sm">upload_file</span> Excel Campaign

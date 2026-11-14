@@ -12,6 +12,7 @@ class VoiceTier(StrEnum):
     STANDARD = "standard"
     PREMIUM = "premium"
     CUSTOM = "custom"
+    VOICE_CLONE = "voice_clone"
 
 
 class LeadStatus(StrEnum):
@@ -94,7 +95,7 @@ class AIEmployee(Base):
     retry_delay_minutes: Mapped[int] = mapped_column(Integer, default=30)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     # The ExoPhone this agent calls from and answers on. Unique across all tenants.
-    phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class Lead(Base):

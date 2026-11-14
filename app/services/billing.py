@@ -12,6 +12,7 @@ RATE_PAISE_PER_MIN = {
     VoiceTier.STANDARD: 500,
     VoiceTier.PREMIUM: 680,
     VoiceTier.CUSTOM: 350,
+    VoiceTier.VOICE_CLONE: 500,
 }
 NUMBER_FEE_PAISE_PER_MONTH = 64900
 

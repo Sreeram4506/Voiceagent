@@ -63,10 +63,16 @@ def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> Stream
     with SessionLocal() as db:
         call = db.get(Call, call_id)
         employee = db.get(AIEmployee, call.employee_id)
-        stt, llm, tts = factory.build_providers(employee)
+        # Load employee extras (voice_gender, temperature, etc.)
+        from app.models import AppSetting
+        extras_key = f"t{employee.tenant_id}_employee_extras"
+        row = db.get(AppSetting, extras_key)
+        all_extras = row.value if row else {}
+        emp_extras = all_extras.get(str(employee.id), {}) if isinstance(all_extras, dict) else {}
+        stt, llm, tts = factory.build_providers(employee, extras=emp_extras)
         cf = call.captured_fields or {}
         mode = _call_modes.pop(call_id, cf.get("mode", "ai_agent"))
-        greeting = cf.get("greeting", "")
+        greeting = cf.get("greeting", "") or emp_extras.get("greeting", "")
 
         holder: dict[str, StreamSession] = {}
 

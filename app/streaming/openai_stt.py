@@ -32,6 +32,13 @@ class OpenAISTT:
         "ru","sr","sk","sl","es","sw","sv","tl","ta","th","tr","uk","ur","vi","cy",
     }
 
+    # Whisper prompt hints for auto-detected languages (improves Telugu/regional accuracy)
+    _LANG_PROMPTS = {
+        "te": "ఈ ఆడియో తెలుగు భాషలో ఉంది. Telugu phone conversation.",
+        "kn": "ಈ ಆಡಿಯೊ ಕನ್ನಡ ಭಾಷೆಯಲ್ಲಿದೆ. Kannada phone conversation.",
+        "ml": "ഈ ഓഡിയോ മലയാളത്തിലാണ്. Malayalam phone conversation.",
+    }
+
     async def end_utterance(self) -> str:
         buf_ms = len(self._buffer) * 1000 // (8000 * 2)
         print(f"[STT] end_utterance: buffer={len(self._buffer)}bytes ({buf_ms}ms)")
@@ -43,6 +50,10 @@ class OpenAISTT:
         kwargs = {"model": "whisper-1", "file": ("audio.wav", wav, "audio/wav")}
         if lang in self.WHISPER_LANGUAGES:
             kwargs["language"] = lang
+        elif lang in self._LANG_PROMPTS:
+            # Pass a Telugu/regional prompt so Whisper doesn't guess English
+            kwargs["prompt"] = self._LANG_PROMPTS[lang]
+            print(f"[STT] using prompt hint for lang={lang}")
         transcript = await self._client.audio.transcriptions.create(**kwargs)
         return transcript.text.strip()
 

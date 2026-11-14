@@ -78,6 +78,7 @@ class StreamSession:
 
     async def start(self) -> None:
         """Opening line: speak the script directly, then wait for caller."""
+        asyncio.create_task(self._warm_fillers())
         self._response = asyncio.create_task(self._speak_opening())
 
     async def cancel(self) -> None:
@@ -143,20 +144,8 @@ class StreamSession:
         print(f"[Filler] {len(self._filler_cache)} phrases cached")
 
     async def _play_filler(self) -> None:
-        """Play a short acknowledgment sound immediately so caller hears a response."""
-        if not self._filler_cache or self.ended:
-            return
-        import time as _time
-        pcm = self._filler_cache[self._filler_idx % len(self._filler_cache)]
-        self._filler_idx += 1
-        frame_bytes = 8000 * 2 // 5  # 200ms frames
-        for i in range(0, len(pcm), frame_bytes):
-            if self.ended:
-                return
-            chunk = pcm[i:i + frame_bytes]
-            await self._safe_send(media_message(self.stream_sid, chunk))
-            await asyncio.sleep(len(chunk) / (8000 * 2))
-        self._echo_until = _time.monotonic() + 0.5
+        """Disabled — filler sounds artificial. Remove when Groq stack reduces latency to <1s."""
+        pass
 
     # ---- inbound audio ---------------------------------------------------
 
@@ -188,6 +177,11 @@ class StreamSession:
             if event == "speech_end" and self._in_utterance:
                 self._in_utterance = False
                 print(f"[VAD] speech_end, transcribing...")
+                # Play filler IMMEDIATELY — before waiting for Whisper (~500ms).
+                # Loop until cancelled (when real response starts) so there's
+                # no silent gap between filler end and actual TTS audio.
+                if self._filler_cache and (self._filler_task is None or self._filler_task.done()):
+                    self._filler_task = asyncio.create_task(self._play_filler())
                 text = (await self.stt.end_utterance()).strip()
                 print(f"[STT] transcript: {repr(text)}")
                 self._preroll.clear()
@@ -202,36 +196,34 @@ class StreamSession:
     async def _barge_in(self) -> None:
         """Caller spoke over the agent: stop the reply and clear the provider's audio buffer."""
         await self.cancel()
-        self._filler_task = None
+        self._filler_task = None  # reset so next speech_end can restart filler loop
         await self._safe_send(clear_message(self.stream_sid))
 
     async def _respond(self, caller_text: str | None) -> None:
+        import time as _t
+        t0 = _t.time()
         if caller_text is not None:
             self.history.append(("caller", caller_text))
 
         end_requested = False
-        is_opening = caller_text is None  # never end call on the opening greeting
-        spoken: list[str] = []
-        buffer = ""
+        is_opening = caller_text is None
+        full_text = ""
 
+        _SENTENCE_END = frozenset('.?!।')
         async for item in self.llm.stream_reply(self.script, self.history, caller_text or ""):
             if isinstance(item, ToolRequest):
                 self.actions.append(item.name)
                 if item.name == "end_call" and not is_opening:
                     end_requested = True
                 continue
-            buffer += item
-            sentences, buffer = pop_sentences(buffer)
-            for sentence in sentences:
-                spoken.append(sentence)
-                await self._speak(sentence)
+            full_text += item
+            if len(full_text) >= 12 and full_text[-1] in _SENTENCE_END:
+                break
 
-        if buffer.strip():
-            spoken.append(buffer.strip())
-            await self._speak(buffer.strip())
-
-        reply = " ".join(spoken)
+        reply = full_text.strip()
+        print(f"[RESPOND] LLM reply ready at {_t.time()-t0:.2f}s: {len(reply)} chars")
         if reply:
+            await self._speak(reply)
             self.history.append(("agent", reply))
             self.turns.append(("agent", reply))
 
@@ -260,6 +252,14 @@ class StreamSession:
                     while len(buf) >= frame_bytes:
                         frame = buf[:frame_bytes]
                         buf = buf[frame_bytes:]
+                        # Cancel filler loop the moment real audio starts so there's
+                        # no overlap between filler and the response.
+                        if not first_sent:
+                            if self._filler_task and not self._filler_task.done():
+                                self._filler_task.cancel()
+                                with suppress(asyncio.CancelledError, Exception):
+                                    await self._filler_task
+                            self._filler_task = None
                         await self._safe_send(media_message(self.stream_sid, frame))
                         if not first_sent:
                             print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
@@ -288,9 +288,9 @@ class StreamSession:
             return
 
         print(f"[TTS] done in {time.time()-t0:.2f}s: {total_bytes} bytes")
-        # suppress echo/sidetone for 500ms after each agent utterance
+        # suppress echo/sidetone briefly after each agent utterance
         import time as _time
-        self._echo_until = _time.monotonic() + 0.5
+        self._echo_until = _time.monotonic() + 0.2
 
     async def _safe_send(self, message: str) -> None:
         with suppress(RuntimeError, OSError):

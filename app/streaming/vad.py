@@ -8,8 +8,8 @@ from app.streaming.audio import FRAME_MS, frame_rms
 @dataclass
 class EnergyVAD:
     threshold: float = 500.0      # RMS level that counts as speech
-    min_speech_ms: int = 200      # ignore clicks and short noises
-    end_silence_ms: int = 200     # silence that closes an utterance
+    min_speech_ms: int = 150      # ignore clicks and short noises
+    end_silence_ms: int = 150     # silence that closes an utterance
 
     def __post_init__(self) -> None:
         self._in_speech = False

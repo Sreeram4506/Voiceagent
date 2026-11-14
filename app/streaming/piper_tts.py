@@ -394,8 +394,8 @@ if not _default_piper_dir.exists() and Path("/Users/koushikeslavath/Downloads/pi
 
 PIPER_VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", str(_default_piper_dir))
 PIPER_VOICE = os.environ.get("PIPER_VOICE", "te_IN-venkatesh-medium")
-# length_scale controls speech duration. 0.72-0.78 makes speech ~30% faster, crisp and energetic.
-PIPER_LENGTH_SCALE = float(os.environ.get("PIPER_LENGTH_SCALE", "0.74"))
+# length_scale < 1.0 speeds up speech. 0.65 is ~40% faster — natural, energetic, human pace.
+PIPER_LENGTH_SCALE = float(os.environ.get("PIPER_LENGTH_SCALE", "0.65"))
 
 TELEPHONY_SAMPLE_RATE = 8000
 
@@ -439,14 +439,21 @@ def _synthesize_pcm8k(text: str, length_scale: float | None = None) -> bytes:
     g = gcd(sr, TELEPHONY_SAMPLE_RATE)
     audio = resample_poly(audio, TELEPHONY_SAMPLE_RATE // g, sr // g).astype(np.float32)
 
-    # Normalize to -20 dBFS, cap at +20dB
+    # Normalize to -14 dBFS — loud, present, human call volume; cap at +20dB
     peak = float(np.abs(audio).max())
     if peak > 1e-6:
-        target = 10 ** (-20.0 / 20)
+        target = 10 ** (-14.0 / 20)
         gain = min(target / peak, 10 ** (20 / 20))
         audio = np.clip(audio * gain, -1.0, 1.0)
 
     return (audio * 32767).astype(np.int16).tobytes()
+
+
+def _split_phrases(text: str) -> list[str]:
+    """Split at natural clause boundaries so each phrase can be synthesized and played in turn."""
+    import re
+    parts = [p.strip() for p in re.split(r'(?<=[,।;])\s+', text) if p.strip()]
+    return parts if parts else [text]
 
 
 class PiperTTS:
@@ -464,3 +471,17 @@ class PiperTTS:
         pcm = await loop.run_in_executor(None, _synthesize_pcm8k, text, self.length_scale)
         print(f"[Piper] synthesis={time.time()-t0:.3f}s text_len={len(text)} speed={PIPER_LENGTH_SCALE} pcm={len(pcm)}bytes")
         return pcm
+
+    async def stream_synthesize(self, text: str, language: str, voice_tier: str):
+        """Yield PCM chunks phrase-by-phrase so the first audio plays while the rest is generated."""
+        import asyncio
+        import time
+
+        loop = asyncio.get_event_loop()
+        phrases = _split_phrases(text)
+        t0 = time.time()
+        for phrase in phrases:
+            pcm = await loop.run_in_executor(None, _synthesize_pcm8k, phrase, self.length_scale)
+            if pcm:
+                print(f"[Piper] stream phrase={time.time()-t0:.3f}s '{phrase[:30]}'")
+                yield pcm

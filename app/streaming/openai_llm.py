@@ -26,49 +26,34 @@ TOOLS = [
     },
 ]
 
-_HUMANIZE_PROMPT = """
-## HOW TO SOUND HUMAN, FAST, AND FLUENT ON A PHONE CALL
-
-You are సుమ — a real, energetic, confident human conversationalist. Not a robot.
-
-PACE & SPEED:
-- Speak quickly, crisply, and promptly.
-- Keep each reply short and punchy: max 10 to 15 words per turn. Long responses sound robotic and boring.
-- Respond immediately to what the caller says without hesitation or repetition.
-
-FLUENT TELUGU & ENGLISH:
-- Language: Natural conversational Telugu (Andhra/Telangana style) mixed with common everyday English words (Kanglish/Telugish).
-- Write everyday English loanwords directly in Telugu script (e.g. 'ఓకే', 'థాంక్స్', 'సార్', 'మేడమ్', 'కాల్', 'అపాయింట్‌మెంట్', 'లోన్', 'రెన్యూవల్', 'మీటింగ్', 'షెడ్యూల్', 'కన్ఫర్మ్', 'డిటైల్స్', 'టైమ్', 'ఫ్రీ', 'బిజీ', 'హలో', 'హాయ్', 'సపోర్ట్', 'బ్యాంక్', 'నెంబర్', 'షుర్', 'నో ప్రాబ్లమ్'). This guarantees 100% fluent, seamless pronunciation without any stuttering.
-- If the caller speaks in pure English, reply in natural, fluent, confident English.
-- If the caller speaks in Telugu, reply in warm, respectful, natural Telugu.
-
-CONVERSATION FLOW:
-- Start each reply with a short, natural reaction word:
-  • They said yes/agreed: "ఖచ్చితంగా అండి," / "చాలా థాంక్స్ అండి," / "ఓకే అండి,"
-  • They shared info: "అచ్చా," / "ఓహ్ సరేనండి," / "అర్థమైంది అండి,"
-  • They asked something: "తప్పకుండా చెప్తాను అండి," / "సింపుల్ గా చెప్తాను,"
-  • They're busy/hesitant: "పర్వాలేదండి," / "నో ప్రాబ్లమ్ అండి,"
-  — pick a DIFFERENT opener each turn, never repeat the same one back-to-back.
-- Ask only ONE clear question at a time.
-- Match the caller's energy: brief if they are in a hurry, warm and helpful if they want details.
-
-Use book_appointment if they want to meet, book an appointment, or confirm a visit.
-Use end_call politely when they're not interested or the conversation is concluded.
+_HUMANIZE_PROMPT = """VOICE CALL RULES (strict):
+- ONE sentence per reply, max 15 words. Never two sentences.
+- Speak like a real Telugu/Hindi person on a phone call — warm, casual, friendly.
+- Use natural fillers: "అవునా...", "అలాగా...", "హ్మ్మ్...", "అచ్ఛా...", "సరే సరే..."
+- Write English words in Telugu/Hindi script: ఓకే, థాంక్స్, ప్లాట్, సైట్ విజిట్, లోన్, బుకింగ్
+- End questions naturally: "కదా?", "అంటారా?", "ఏమంటారు?"
+- Vary openers. Never repeat the same one twice in a row.
+- NEVER say you're an AI, bot, or assistant. You are a real person.
+- Match caller energy and mood. Ask only ONE question per reply.
+- Use "..." for a thinking pause (once per reply max).
+- Use book_appointment for site visits. Use end_call when done/not interested.
 """
 
 
 class OpenAILLM:
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini", temperature: float = 0.85):
         self._client = openai.AsyncOpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
         self._model = model
+        self._temperature = temperature
 
     async def stream_reply(
         self, script: str, history: list[tuple[str, str]], caller_text: str
     ) -> AsyncIterator[str | ToolRequest]:
+        import time
         system = f"{script}\n\n{_HUMANIZE_PROMPT}"
 
         messages = [{"role": "system", "content": system}]
-        for role, text in history:
+        for role, text in history[-6:]:
             messages.append({
                 "role": "user" if role == "caller" else "assistant",
                 "content": text,
@@ -77,17 +62,20 @@ class OpenAILLM:
             messages.append({"role": "user", "content": caller_text})
 
         if len(messages) == 1:
-            messages.append({"role": "user", "content": "[Call just connected — they picked up. Start with a warm, natural Telugu greeting. One sentence only, like a real person calling.]"})
+            messages.append({"role": "user", "content": "[Call connected. Greet warmly in the language of your system prompt — like a friendly person calling, not a call centre. One natural sentence.]"})
 
         tool_calls_acc: dict[int, dict] = {}
+        t0 = time.time()
+        first_token = True
 
         stream = await self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             tools=TOOLS,
-            max_tokens=120,
-            temperature=0.85,
+            max_tokens=100,
+            temperature=self._temperature,
             stream=True,
+            stream_options={"include_usage": True},
         )
 
         async for chunk in stream:
@@ -96,6 +84,9 @@ class OpenAILLM:
                 continue
 
             if delta.content:
+                if first_token:
+                    print(f"[LLM] first token at {time.time()-t0:.2f}s")
+                    first_token = False
                 yield delta.content
 
             if delta.tool_calls:
@@ -108,6 +99,7 @@ class OpenAILLM:
                     if tc.function and tc.function.arguments:
                         tool_calls_acc[idx]["args"] += tc.function.arguments
 
+        print(f"[LLM] done in {time.time()-t0:.2f}s")
         for tc in tool_calls_acc.values():
             if tc["name"]:
                 yield ToolRequest(tc["name"], {})
