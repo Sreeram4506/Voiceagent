@@ -169,9 +169,21 @@ def get_telephony() -> TelephonyProvider:
 
 @app.on_event("startup")
 def _startup() -> None:
-    init_db()
-    ensure_default_tenant()
-    # Pre-load XTTS model in background if reference WAV exists (avoids 20s first-call delay)
+    import traceback
+    try:
+        print("[Startup] Initializing database...")
+        init_db()
+        print("[Startup] Database initialized OK")
+    except Exception as e:
+        print(f"[Startup] DATABASE INIT FAILED: {e}")
+        traceback.print_exc()
+        raise
+    try:
+        ensure_default_tenant()
+        print("[Startup] Default tenant OK")
+    except Exception as e:
+        print(f"[Startup] Default tenant creation failed: {e}")
+        traceback.print_exc()
     try:
         from app.streaming.xtts_provider import warmup
         warmup()

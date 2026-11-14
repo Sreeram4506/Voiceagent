@@ -12,10 +12,15 @@ class Base(DeclarativeBase):
 
 def _make_engine(url: str):
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=connect_args, future=True)
+    pool_args = {}
+    if not url.startswith("sqlite"):
+        pool_args = {"pool_pre_ping": True, "pool_recycle": 300}
+    return create_engine(url, connect_args=connect_args, future=True, **pool_args)
 
 
-engine = _make_engine(get_settings().database_url)
+_url = get_settings().database_url
+print(f"[DB] Using database: {_url.split('@')[-1] if '@' in _url else _url}")
+engine = _make_engine(_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -35,8 +40,13 @@ def _ensure_columns() -> None:
         return
     cols = {c["name"] for c in inspector.get_columns("leads")}
     if "campaign_id" not in cols:
+        dialect = engine.dialect.name
+        if dialect == "sqlite":
+            ddl = "ALTER TABLE leads ADD COLUMN campaign_id INTEGER"
+        else:
+            ddl = "ALTER TABLE leads ADD COLUMN IF NOT EXISTS campaign_id INTEGER"
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE leads ADD COLUMN campaign_id INTEGER"))
+            conn.execute(text(ddl))
 
 
 def get_session() -> Iterator[Session]:
