@@ -24,9 +24,18 @@ body{overscroll-behavior:none}
 .icon-lg{font-size:22px}
 .hidden{display:none!important}
 .glass{backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);background:rgba(255,255,255,0.7)}
-.toast{position:fixed;bottom:24px;right:24px;z-index:200;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;max-width:320px}
+.toast{position:fixed;bottom:24px;left:16px;right:16px;z-index:200;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;max-width:320px;margin:0 auto}
 .toast.show{opacity:1;transform:none}
 .modal-bg{position:fixed;inset:0;background:rgba(27,26,35,.5);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+@media(max-width:640px){
+  .modal-bg{align-items:flex-end;padding:0}
+  .modal-bg>div{width:100%;max-width:100%}
+  .modal-bg>div>div{border-radius:20px 20px 0 0!important;max-height:92vh;width:100%!important;max-width:100%!important}
+}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(27,26,35,.4);z-index:45}
+@media(max-width:1023px){
+  .sidebar-overlay.open{display:block}
+}
 .nav-link{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#46454f;cursor:pointer;text-decoration:none;transition:all .15s;white-space:nowrap}
 .nav-link:hover{background:#e8e6ff;color:#1b0587}
 .nav-link.active{background:#3525cd;color:#fff}
@@ -79,6 +88,20 @@ body{overscroll-behavior:none}
 .sidebar-section-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#79767d;padding:12px 12px 4px}
 .range-track{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:#e4e1f5;outline:none}
 .range-track::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#3525cd;cursor:pointer;box-shadow:0 2px 6px rgba(53,37,205,.3)}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media(max-width:1023px){
+  #sidebar{transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1)}
+  #sidebar.open{transform:translateX(0)}
+  header.top-header{left:0!important}
+  main.main-content{padding-left:0!important}
+}
+@media(max-width:640px){
+  .phone-case{width:100%;max-width:340px;height:640px;border-radius:36px;padding:8px}
+  .phone-screen{border-radius:30px}
+  .phone-notch{width:100px;height:22px}
+  .dial-btn{width:54px;height:54px}
+  .dial-btn .digit{font-size:20px}
+}
 
 /* ═══════════════════════════════════════════════════════════
    PHONE UI / DIALER ENCLOSURE & CONTROLS
@@ -160,6 +183,9 @@ body{overscroll-behavior:none}
 </head>
 <body class="bg-surface font-sans text-on-surface">
 
+<!-- SIDEBAR OVERLAY (mobile) -->
+<div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- SIDEBAR -->
 <aside id="sidebar" class="fixed left-0 top-0 h-screen w-60 bg-white border-r border-surface-container-high z-50 flex flex-col overflow-hidden">
   <div class="h-14 px-4 flex items-center gap-3 border-b border-surface-container-high">
@@ -189,24 +215,27 @@ body{overscroll-behavior:none}
 </aside>
 
 <!-- HEADER -->
-<header class="fixed top-0 left-60 right-0 h-14 bg-white/80 backdrop-blur-sm border-b border-surface-container-high z-40 flex items-center justify-between px-5">
-  <div class="flex items-center gap-3">
-    <div class="text-[12px] text-on-surface-variant font-medium" id="crumbs">Dashboard</div>
-    <div class="relative ml-2">
+<header class="top-header fixed top-0 left-60 right-0 h-14 bg-white/80 backdrop-blur-sm border-b border-surface-container-high z-40 flex items-center justify-between px-3 sm:px-5">
+  <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+    <button id="menuBtn" onclick="toggleSidebar()" class="lg:hidden p-1.5 -ml-1 rounded-lg hover:bg-surface-container-low transition-colors flex-shrink-0">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+    <div class="text-[12px] text-on-surface-variant font-medium truncate" id="crumbs">Dashboard</div>
+    <div class="relative ml-2 hidden sm:block">
       <span class="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant" style="font-size:15px">search</span>
-      <input id="globalSearch" class="w-72 h-9 pl-9 pr-3 bg-surface-container-low rounded-xl text-[13px] border border-surface-container-high focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="Search…"/>
+      <input id="globalSearch" class="w-48 md:w-72 h-9 pl-9 pr-3 bg-surface-container-low rounded-xl text-[13px] border border-surface-container-high focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="Search…"/>
       <div id="searchBox" class="hidden absolute top-11 left-0 w-72 bg-white rounded-xl shadow-modal border border-surface-container-high p-2 text-[13px] z-50 max-h-64 overflow-y-auto"></div>
     </div>
   </div>
-  <div class="flex items-center gap-2">
-    <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full text-[12px] font-semibold">
+  <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+    <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full text-[12px] font-semibold">
       <span class="pulse-ring pulse-green"></span>
       <span id="liveCount">0 Live</span>
     </div>
-    <button onclick="openPhoneDialer()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[12px] font-semibold rounded-full flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95">
-      <span class="material-symbols-outlined" style="font-size:15px">dialpad</span> Phone
+    <button onclick="openPhoneDialer()" class="hidden sm:flex px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[12px] font-semibold rounded-full items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95">
+      <span class="material-symbols-outlined" style="font-size:15px">dialpad</span> <span class="hidden md:inline">Phone</span>
     </button>
-    <button onclick="go('live-calls')" class="px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-full flex items-center gap-1.5 hover:bg-primary/90 transition-colors">
+    <button onclick="go('live-calls')" class="hidden md:flex px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-full items-center gap-1.5 hover:bg-primary/90 transition-colors">
       <span class="material-symbols-outlined" style="font-size:14px">phone_in_talk</span> Monitor
     </button>
     <button id="notifBtn" class="relative p-2 rounded-xl hover:bg-surface-container-low transition-colors">
@@ -217,8 +246,8 @@ body{overscroll-behavior:none}
 </header>
 
 <!-- MAIN -->
-<main class="pl-60 pt-14 min-h-screen">
-  <div id="view" class="p-5"></div>
+<main class="main-content lg:pl-60 pt-14 min-h-screen">
+  <div id="view" class="p-3 sm:p-5"></div>
 </main>
 
 <!-- FLOATING PHONE DIALER BUTTON -->
@@ -260,6 +289,17 @@ async function doLogout() {
     await fetch('/dashboard/api/auth/logout', {method:'POST', credentials:'same-origin'});
   } catch(e) {}
   location.href = '/login';
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebarOverlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -322,7 +362,7 @@ function buildNav() {
   nav.innerHTML = NAV.map(section => `
     <div class="sidebar-section-label">${section.label}</div>
     ${section.items.map(item => `
-      <a href="#${item.id}" data-route="${item.id}" class="nav-link">
+      <a href="#${item.id}" data-route="${item.id}" class="nav-link" onclick="closeSidebar()">
         <span class="material-symbols-outlined">${item.icon}</span>
         ${item.title}
       </a>
@@ -395,12 +435,12 @@ async function renderDashboard() {
     <div class="max-w-7xl mx-auto space-y-5">
 
       <!-- Header Row -->
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 class="text-xl font-bold text-on-surface">Operations Dashboard</h1>
+          <h1 class="text-lg sm:text-xl font-bold text-on-surface">Operations Dashboard</h1>
           <p class="text-sm text-on-surface-variant mt-0.5">Real-time overview · <span id="lastUpdated" class="text-primary">Just updated</span></p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
           <button onclick="pauseAll()" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">pause_circle</span> Pause All</button>
           <button onclick="resumeAll()" class="btn-secondary text-[12px]"><span class="material-symbols-outlined icon-sm">play_circle</span> Resume All</button>
           <button onclick="go('create-campaign')" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> New Campaign</button>
@@ -408,7 +448,7 @@ async function renderDashboard() {
       </div>
 
       <!-- KPI Grid -->
-      <div class="grid grid-cols-6 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         ${[
           {label:'Total Contacts',val:k.contacts??0,icon:'contacts',color:'text-primary',sub:'In pipeline'},
           {label:'Calls Placed',val:k.calls_placed??0,icon:'call_made',color:'text-secondary',sub:'Total outbound'},
@@ -428,9 +468,9 @@ async function renderDashboard() {
         `).join('')}
       </div>
 
-      <div class="grid grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <!-- Call Volume Trend -->
-        <div class="col-span-2 bg-white rounded-2xl p-5 shadow-card">
+        <div class="lg:col-span-2 bg-white rounded-2xl p-4 sm:p-5 shadow-card">
           <div class="flex items-center justify-between mb-4">
             <div>
               <h3 class="font-semibold text-on-surface">Call Volume Trend</h3>
@@ -490,13 +530,14 @@ async function renderDashboard() {
         </div>
       </div>
 
-      <div class="grid grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <!-- Campaigns Table -->
-        <div class="col-span-2 bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-card overflow-hidden">
           <div class="px-5 py-4 border-b border-surface-container-high flex items-center justify-between">
             <h3 class="font-semibold text-on-surface">Active Campaigns</h3>
             <button onclick="go('all-campaigns')" class="text-[12px] text-primary font-semibold hover:underline">View all →</button>
           </div>
+          <div class="table-wrap">
           <table class="table">
             <thead><tr>
               <th>Campaign</th><th>Status</th><th>Contacts</th><th>Booked</th><th>Progress</th><th>Actions</th>
@@ -533,6 +574,7 @@ async function renderDashboard() {
             `).join('')}
             </tbody>
           </table>
+          </div>
         </div>
 
         <!-- Right: Pipeline + Appointments -->
@@ -615,6 +657,7 @@ async function renderAllCampaigns() {
         <button onclick="go('create-campaign')" class="btn-primary"><span class="material-symbols-outlined icon-sm">add</span> New Campaign</button>
       </div>
       <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Campaign</th><th>Status</th><th>Contacts</th><th>Progress</th><th>Booked</th><th>Created</th><th>Actions</th></tr></thead>
           <tbody>
@@ -649,6 +692,7 @@ async function renderAllCampaigns() {
           `).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
@@ -688,7 +732,7 @@ function _renderWizard(lists=[], agents=[]) {
   if(s===1) content = `
     <div class="space-y-5">
       <h2 class="text-lg font-bold">Campaign Information</h2>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Campaign Name *</label>
           <input class="input" id="wName" value="${esc(d.name)}" placeholder="e.g. Raju Constituency Outreach 2026"/>
@@ -720,7 +764,7 @@ function _renderWizard(lists=[], agents=[]) {
       <h2 class="text-lg font-bold">Contact List</h2>
       <div>
         <label class="text-[12px] font-semibold text-on-surface-variant mb-2 block">Select existing contact list</label>
-        <div class="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
           ${lists.length===0 ? '<p class="text-on-surface-variant text-sm col-span-2">No contact lists yet. Upload one below.</p>' :
             lists.map(l => `
               <div class="p-3 rounded-xl border-2 cursor-pointer transition-all ${d.contact_list_id===l.id?'border-primary bg-primary-container/30':'border-surface-container-high hover:border-primary/50'}"
@@ -748,7 +792,7 @@ function _renderWizard(lists=[], agents=[]) {
   else if(s===3) content = `
     <div class="space-y-5">
       <h2 class="text-lg font-bold">Voice Agent</h2>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         ${agents.length===0 ? '<p class="text-on-surface-variant col-span-2">No agents yet. <a href="#agent-studio" class="text-primary font-semibold">Create one in Agent Studio →</a></p>' :
           agents.map(a => `
             <div class="p-4 rounded-xl border-2 cursor-pointer transition-all ${d.employee_id===a.id?'border-primary bg-primary-container/30':'border-surface-container-high hover:border-primary/50'}"
@@ -795,7 +839,7 @@ function _renderWizard(lists=[], agents=[]) {
   else if(s===5) content = `
     <div class="space-y-5">
       <h2 class="text-lg font-bold">Schedule & Calling Window</h2>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label class="text-[12px] font-semibold text-on-surface-variant mb-1.5 block">Start Time</label>
           <input type="time" class="input" id="wWinStart" value="${d.window_start||'09:30'}"/>
@@ -984,10 +1028,10 @@ function _renderAgentStudio(agents) {
         </div>
         <button onclick="showCreateAgent()" class="btn-primary"><span class="material-symbols-outlined icon-sm">add</span> New Agent</button>
       </div>
-      <div class="grid grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
 
         <!-- Agent List -->
-        <div class="col-span-1">
+        <div class="xl:col-span-1">
           <div class="bg-white rounded-2xl shadow-card overflow-hidden">
             <div class="px-4 py-3 border-b border-surface-container-high text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">Agents (${agents.length})</div>
             ${agents.length===0 ? `<div class="p-4 text-center text-on-surface-variant text-sm">No agents yet</div>` :
@@ -1006,11 +1050,11 @@ function _renderAgentStudio(agents) {
         </div>
 
         <!-- Agent Config -->
-        <div class="col-span-2 space-y-4">
+        <div class="md:col-span-1 xl:col-span-2 space-y-4">
           ${a ? `
             <div class="bg-white rounded-2xl shadow-card p-5">
               <h3 class="font-semibold mb-4">Agent Identity</h3>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Name</label>
                   <input class="input" id="aName" value="${esc(a.name||'')}"/>
@@ -1081,7 +1125,7 @@ function _renderAgentStudio(agents) {
         </div>
 
         <!-- Playground -->
-        <div class="col-span-1">
+        <div class="xl:col-span-1">
           <div class="bg-white rounded-2xl shadow-card flex flex-col" style="height:calc(100vh - 200px)">
             <div class="px-4 py-3 border-b border-surface-container-high">
               <div class="font-semibold text-[13px]">Voice Playground</div>
@@ -1166,7 +1210,7 @@ function showCreateAgent(editEmp) {
   const tierVal = e.voice_tier || 'standard';
 
   showModal(`
-    <div class="bg-white rounded-2xl shadow-modal w-[520px] max-h-[92vh] overflow-y-auto" style="scrollbar-width:thin">
+    <div class="bg-white rounded-2xl shadow-modal w-[520px] max-w-[calc(100vw-32px)] max-h-[92vh] overflow-y-auto" style="scrollbar-width:thin">
       <!-- Header -->
       <div class="sticky top-0 bg-white z-10 px-6 pt-6 pb-4 border-b border-surface-container-high">
         <div class="flex items-center gap-3">
@@ -1186,7 +1230,7 @@ function showCreateAgent(editEmp) {
           <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[14px]">badge</span> Identity
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Agent Name</label>
               <input class="input" id="caName" value="${esc(e.name||'Suma')}" placeholder="Suma"/>
@@ -1454,12 +1498,12 @@ async function _loadLiveCalls() {
 
   viewEl.innerHTML = `
     <div class="max-w-7xl mx-auto">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
-          <h1 class="text-xl font-bold">Live Call Monitoring</h1>
+          <h1 class="text-lg sm:text-xl font-bold">Live Call Monitoring</h1>
           <p class="text-sm text-on-surface-variant mt-0.5">${totalLive} active · auto-refreshes every 4s</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
           ${autocall.active
             ? `<button onclick="stopAutocall()" class="btn-ghost text-[12px] text-orange-500 border-orange-200"><span class="material-symbols-outlined icon-sm">stop_circle</span> Stop Auto-Call</button>`
             : `<button onclick="startAutocall()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">play_circle</span> Start Auto-Call</button>`
@@ -1469,7 +1513,7 @@ async function _loadLiveCalls() {
       </div>
 
       <!-- Status Tiles -->
-      <div class="grid grid-cols-4 gap-3 mb-4">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         ${[
           {label:'Live Calls',val:totalLive,color:'text-tertiary',bg:'bg-tertiary/10',icon:'phone_in_talk'},
           {label:'Dialing',val:statusDist.dialing||0,color:'text-blue-600',bg:'bg-blue-50',icon:'phone_callback'},
@@ -1486,9 +1530,9 @@ async function _loadLiveCalls() {
         `).join('')}
       </div>
 
-      <div class="grid grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <!-- Call Cards -->
-        <div class="col-span-1">
+        <div class="lg:col-span-1">
           <div class="bg-white rounded-2xl shadow-card overflow-hidden" style="max-height:calc(100vh-280px);overflow-y:auto">
             <div class="px-4 py-3 border-b border-surface-container-high text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
               Active Calls (${calls.length})
@@ -1501,7 +1545,7 @@ async function _loadLiveCalls() {
         </div>
 
         <!-- Transcript + Controls -->
-        <div class="col-span-2 flex flex-col gap-4">
+        <div class="lg:col-span-2 flex flex-col gap-4">
           ${selected ? `
             <div class="bg-white rounded-2xl shadow-card p-4 flex items-center justify-between">
               <div class="flex items-center gap-3">
@@ -1585,6 +1629,7 @@ async function renderCallHistory() {
         </div>
       </div>
       <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Contact</th><th>Status</th><th>Outcome</th><th>Duration</th><th>Started</th><th>Transcript</th></tr></thead>
           <tbody>
@@ -1609,6 +1654,7 @@ async function renderCallHistory() {
             `).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
@@ -1620,7 +1666,7 @@ function showTranscript(id) {
   const call = _callsData.find(c => c.id === id); if(!call) return;
   const turns = call.turns||[];
   showModal(`
-    <div class="bg-white rounded-2xl p-5 w-[500px] max-h-[70vh] overflow-y-auto shadow-modal">
+    <div class="bg-white rounded-2xl p-5 w-[500px] max-w-[calc(100vw-32px)] max-h-[70vh] overflow-y-auto shadow-modal">
       <div class="flex justify-between items-center mb-4">
         <div>
           <h3 class="font-bold">Call Transcript</h3>
@@ -1654,7 +1700,7 @@ async function renderContactLists() {
 
   $('view').innerHTML = `
     <div class="max-w-6xl mx-auto">
-      <div class="flex items-center justify-between mb-5">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 class="text-xl font-bold">Contact Lists</h1>
           <p class="text-sm text-on-surface-variant">${leads.length||0} total contacts</p>
@@ -1669,7 +1715,7 @@ async function renderContactLists() {
       </div>
 
       ${lists.length>0 ? `
-        <div class="grid grid-cols-3 gap-3 mb-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
           ${lists.map(l => `
             <div class="bg-white rounded-xl p-4 shadow-card">
               <div class="flex items-center gap-2 mb-2">
@@ -1688,6 +1734,7 @@ async function renderContactLists() {
           <div class="font-semibold text-[13px]">All Contacts</div>
           <button onclick="startDispatch()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">send</span> Dispatch All</button>
         </div>
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Attempts</th><th>Last Called</th><th>Actions</th></tr></thead>
           <tbody>
@@ -1709,6 +1756,7 @@ async function renderContactLists() {
             `).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
@@ -1788,6 +1836,7 @@ async function renderAppointments() {
         <button onclick="showAddAppt()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> New Appointment</button>
       </div>
       <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Contact</th><th>Scheduled</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
           <tbody>
@@ -1811,6 +1860,7 @@ async function renderAppointments() {
             `).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
@@ -1884,7 +1934,7 @@ async function renderSettings() {
 
       <div class="bg-white rounded-2xl shadow-card p-5">
         <h3 class="font-semibold mb-4">Organisation</h3>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Org Name</label>
             <input class="input" id="sOrgName" value="${esc(settings.org_name||'')}"/>
@@ -1946,6 +1996,7 @@ async function renderTeam() {
         <button onclick="showAddMember()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">person_add</span> Add Member</button>
       </div>
       <div class="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Member</th><th>Role</th><th>Status</th></tr></thead>
           <tbody>
@@ -1967,6 +2018,7 @@ async function renderTeam() {
             `).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
@@ -2016,7 +2068,7 @@ async function renderEmployees() {
 
   $('view').innerHTML = `
     <div class="max-w-6xl mx-auto space-y-5">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 class="text-xl font-bold text-on-surface">Employees</h1>
           <p class="text-sm text-on-surface-variant mt-0.5">AI Voice Agents · ${employees.length} configured</p>
@@ -2591,16 +2643,16 @@ async function renderPhoneDialerView() {
 
   $('view').innerHTML = `
     <div class="max-w-6xl mx-auto">
-      <div class="flex items-center justify-between mb-5">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 class="text-xl font-bold text-on-surface flex items-center gap-2">
             <span class="material-symbols-outlined text-emerald-600">dialpad</span> AI Phone Dialer
           </h1>
-          <p class="text-sm text-on-surface-variant mt-0.5">Place conversational voice calls, test prompts, and stream live transcripts</p>
+          <p class="text-sm text-on-surface-variant mt-0.5 hidden sm:block">Place conversational voice calls, test prompts, and stream live transcripts</p>
         </div>
         <div class="flex items-center gap-3">
-          <span class="text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Plivo SIP Trunk Connected
+          <span class="text-[11px] sm:text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Plivo Connected
           </span>
         </div>
       </div>
@@ -2620,7 +2672,7 @@ async function renderPhoneDialerView() {
             <h3 class="text-[14px] font-bold text-on-surface mb-2 flex items-center gap-2">
               <span class="material-symbols-outlined text-primary text-[18px]">quickreply</span> Quick Dials & Presets
             </h3>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button onclick="quickFillDialer('+918065591949','Test Line')" class="p-2.5 rounded-xl border border-surface-container hover:border-emerald-500 hover:bg-emerald-50/50 text-left transition-all">
                 <div class="text-[12.5px] font-semibold text-on-surface">Official ExoPhone</div>
                 <div class="text-[11px] text-on-surface-variant font-mono">+91 80655 91949</div>
