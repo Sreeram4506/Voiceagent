@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import io
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from sqlalchemy import func
+from sqlalchemy import extract, func, text
 
 from app.db import SessionLocal
 from app.models import (
@@ -197,10 +197,16 @@ def overview(request: Request):
                 "scheduled": scheduled,
             })
         hourly = [0] * 24
+        from app.db import engine as _db_engine
+        _is_pg = _db_engine.dialect.name != "sqlite"
+        if _is_pg:
+            hour_col = extract("hour", Call.started_at)
+        else:
+            hour_col = func.strftime("%H", Call.started_at)
         for hour, count in (
-            db.query(func.strftime("%H", Call.started_at), func.count(Call.id))
+            db.query(hour_col, func.count(Call.id))
             .filter(Call.tenant_id == tid)
-            .group_by(func.strftime("%H", Call.started_at))
+            .group_by(hour_col)
             .all()
         ):
             try:
