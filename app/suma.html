@@ -1351,7 +1351,14 @@ function showCreateAgent(editEmp) {
           <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[14px]">description</span> System Prompt
           </div>
-          <textarea class="textarea h-28" id="caScript" placeholder="You are Suma, a warm Telugu voice agent for banking calls…">${esc(e.script||'')}</textarea>
+          <textarea class="textarea h-28" id="caScript" placeholder="Describe what the agent should do, e.g. 'Book site visits for a real estate company selling plots near Hyderabad'…">${esc(e.script||'')}</textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button type="button" id="caGenerateBtn" onclick="_generatePrompt()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-primary text-white text-[11px] font-semibold shadow-sm hover:shadow-md transition-all active:scale-95">
+              <span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+              Auto-Generate Prompt
+            </button>
+            <span class="text-[10px] text-on-surface-variant">Type a brief description and click to generate a full prompt</span>
+          </div>
         </div>
 
         <!-- Section: Calling Rules -->
@@ -1423,6 +1430,37 @@ function _getAgentFormData() {
     window_end: $('caWinEnd')?.value || '20:00',
     paused: !$('caActive')?.checked,
   };
+}
+
+async function _generatePrompt() {
+  const brief = $('caScript')?.value?.trim();
+  if (!brief) { toast('Type a short description first', false); return; }
+  const btn = $('caGenerateBtn');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> Generating…';
+  try {
+    const selectedStyle = document.querySelector('#caStyleWrap button.bg-primary-container')?.dataset?.style || 'humanized';
+    const r = await api('/api/generate-prompt', {
+      method: 'POST',
+      body: JSON.stringify({
+        brief,
+        name: $('caName')?.value || 'Suma',
+        language: $('caLang')?.value || 'te',
+        speaking_style: selectedStyle,
+      }),
+    });
+    if (r.prompt) {
+      $('caScript').value = r.prompt;
+      $('caScript').style.height = 'auto';
+      $('caScript').style.height = Math.max(112, $('caScript').scrollHeight) + 'px';
+      toast('Prompt generated!');
+    } else {
+      toast(r.error || 'Generation failed', false);
+    }
+  } catch (e) { toast('Generation failed', false); }
+  btn.disabled = false;
+  btn.innerHTML = orig;
 }
 
 function _refreshAgentViews() {

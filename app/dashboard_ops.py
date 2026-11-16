@@ -1095,6 +1095,61 @@ def save_integrations(request: Request, payload: dict):
         return {"ok": True}
 
 
+@ops.post("/api/generate-prompt")
+def generate_prompt(request: Request, payload: dict):
+    """Auto-generate a humanized system prompt from a brief description."""
+    _require_tid(request)
+    brief = str(payload.get("brief") or "").strip()
+    if not brief:
+        return {"error": "Please type a short description of what the agent should do."}
+    agent_name = str(payload.get("name") or "Suma").strip()
+    language = str(payload.get("language") or "te").strip()
+    style = str(payload.get("speaking_style") or "humanized").strip()
+
+    lang_names = {"te": "Telugu", "hi": "Hindi", "en": "English", "ta": "Tamil", "kn": "Kannada"}
+    lang_label = lang_names.get(language, language)
+    style_labels = {
+        "humanized": "warm, respectful and conversational",
+        "professional": "polished and to the point",
+        "casual": "easygoing and friendly",
+        "energetic": "upbeat and enthusiastic",
+    }
+    style_label = style_labels.get(style, style_labels["humanized"])
+
+    meta_prompt = (
+        "You write system prompts for a voice AI agent that makes phone calls. "
+        "Given a brief from the user, produce a complete system prompt the agent will follow on every call.\n\n"
+        "Rules for the prompt you write:\n"
+        f"- The agent's name is {agent_name}. It speaks {lang_label}.\n"
+        f"- Tone: {style_label}.\n"
+        "- Include: who the agent is, what company/product it represents (from the brief), "
+        "the goal of each call (book appointment, collect info, etc.), how to handle objections, "
+        "what information to gather from the caller, and when to end the call.\n"
+        "- Write it as direct instructions to the agent ('You are…', 'Your goal is…').\n"
+        "- Keep it concise: 100–200 words. No markdown headings or bullet points — just flowing sentences and short paragraphs.\n"
+        "- Sound human, not robotic. The prompt should make the agent behave naturally.\n"
+        "- Do NOT include instructions about language switching, tool calling, or technical details — those are handled separately.\n\n"
+        f"Brief from the user:\n{brief}"
+    )
+
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        return {"error": "OpenAI API key not configured"}
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": meta_prompt}],
+            max_tokens=400,
+            temperature=0.8,
+        )
+        generated = (resp.choices[0].message.content or "").strip()
+        return {"prompt": generated}
+    except Exception as e:
+        return {"error": f"Generation failed: {e}"}
+
+
 @ops.post("/api/playground")
 def playground(request: Request, payload: dict):
     tid = _require_tid(request)
