@@ -21,12 +21,20 @@ import os
 from app.streaming.mock_providers import MockAsyncLLM, MockAsyncSTT, MockAsyncTTS
 
 
+def _speech_rate(extras: dict) -> float:
+    """The agent's saved speech rate as a multiplier (1.0 = normal)."""
+    try:
+        return float(extras.get("speech_rate") or 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def _build_tts(employee, openai_key, extras=None):
     lang = getattr(employee, "language", "te") if employee else "te"
     voice_tier = getattr(employee, "voice_tier", "standard") if employee else "standard"
     extras = extras or {}
     gender = extras.get("voice_gender", "female")
-    speech_rate = extras.get("speech_rate", "+0%")
+    speech_rate = _speech_rate(extras)
 
     # Voice clone tier: Coqui XTTS v2 (zero-shot cloning from reference WAV)
     if str(voice_tier) == "voice_clone":
@@ -42,15 +50,14 @@ def _build_tts(employee, openai_key, extras=None):
     # Premium tier: OpenAI tts-1 — higher quality for any language
     if str(voice_tier) == "premium" and openai_key:
         from app.streaming.openai_tts import OpenAITTS
-        speed = 0.9 if lang in ("te", "hi") else 1.0
-        print(f"[Factory] OpenAI TTS (premium) lang={lang} speed={speed}")
-        return OpenAITTS(openai_key, voice="nova", speed=speed)
+        print(f"[Factory] OpenAI TTS (premium) lang={lang} speed={speech_rate}")
+        return OpenAITTS(openai_key, voice="nova", speed=speech_rate)
 
     # Telugu & Hindi standard: Microsoft Edge Neural voices — free, native pronunciation
     if lang in ("te", "hi"):
         try:
             from app.streaming.edge_tts_provider import EdgeTTS
-            rate = speech_rate if speech_rate else "-5%"
+            rate = f"{round((speech_rate - 1) * 100):+d}%"
             print(f"[Factory] EdgeTTS lang={lang} gender={gender} rate={rate}")
             return EdgeTTS(gender=gender, rate=rate)
         except Exception as e:
@@ -60,7 +67,7 @@ def _build_tts(employee, openai_key, extras=None):
     if lang == "en" and openai_key:
         from app.streaming.openai_tts import OpenAITTS
         print("[Factory] OpenAI TTS (English)")
-        return OpenAITTS(openai_key, voice="nova", speed=1.0)
+        return OpenAITTS(openai_key, voice="nova", speed=speech_rate)
 
     # Piper — local offline fallback
     try:

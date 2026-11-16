@@ -20,6 +20,8 @@ from app.streaming.protocol import clear_message, media_message
 
 # gpt-realtime-1.5 answers ~0.5s sooner than the gpt-realtime-2.x reasoning models on Telugu calls.
 MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime-1.5")
+# Voice engine tiers: standard is the fastest model, premium the most capable one.
+MODEL_BY_TIER = {"premium": "gpt-realtime-2.1"}
 TRANSCRIBE_MODEL = "gpt-4o-transcribe"
 VOICES = {"female": "marin", "male": "cedar"}
 LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "Tamil", "kn": "Kannada"}
@@ -48,7 +50,7 @@ TOOLS = [
 
 _STYLE = """# How you speak on this call
 - You are on a live phone call. {language_rule}
-- Sound warm, relaxed and respectful, like a friendly local person on the phone, not a call centre script.
+- {tone}
 - Keep every reply to one or two short sentences, then stop and let the caller talk. Never give a speech or a list.
 - React like a person: brief acknowledgements, a natural pace, matching the caller's mood. Vary your wording; never repeat the same opener twice in a row.
 - Ask only one question at a time.
@@ -65,6 +67,25 @@ _NATIVE_RULE = (
     "unless the caller speaks English to you first; if they do, follow their language."
 )
 _ENGLISH_RULE = "Speak simple, friendly Indian English. If the caller switches to another language, switch with them."
+
+TONES = {
+    "humanized": "Sound warm, relaxed and respectful, like a friendly local person on the phone, not a call centre script.",
+    "professional": "Sound polished, clear and to the point, like a senior relationship manager. Skip small talk and fillers.",
+    "casual": "Sound easygoing and friendly, like chatting with a neighbour. A little light humour is fine.",
+    "energetic": "Sound upbeat, enthusiastic and persuasive. Keep the energy high and gently steer towards a yes.",
+}
+
+
+def persona(name: str = "", speaking_style: str = "humanized", creativity: float = 0.85) -> list[str]:
+    """Instruction lines for the agent's name, tone and how freely it improvises."""
+    lines = [TONES.get(speaking_style, TONES["humanized"])]
+    if name.strip():
+        lines.append(f"Your name is {name.strip()}. Use that name whenever you introduce yourself.")
+    if creativity < 0.6:
+        lines.append("Stay close to the facts and wording of your brief. Do not improvise details or drift off topic.")
+    elif creativity > 0.95:
+        lines.append("Be spontaneous: vary your phrasing freely and add brief small talk where it fits, but never invent facts.")
+    return lines
 
 
 def _ulaw_tables() -> tuple[np.ndarray, np.ndarray]:
@@ -107,9 +128,14 @@ class RealtimeSession:
         greeting: str = "",
         voice_gender: str = "female",
         model: str = MODEL,
+        name: str = "",
+        speaking_style: str = "humanized",
+        creativity: float = 0.85,
+        speech_rate: float = 1.0,
     ):
         self._api_key = api_key
         self._model = model
+        self._speed = min(1.5, max(0.25, speech_rate))
         self._language = language
         self._greeting = greeting.strip()
         self._voice = VOICES.get(voice_gender, VOICES["female"])
@@ -117,7 +143,7 @@ class RealtimeSession:
             rule = _ENGLISH_RULE
         else:
             rule = _NATIVE_RULE.format(name=LANGUAGE_NAMES.get(language, language))
-        style = _STYLE.format(language_rule=rule)
+        style = _STYLE.format(language_rule=rule, tone="\n- ".join(persona(name, speaking_style, creativity)))
         self._instructions = f"{script}\n\n{style}"
 
         self.actions: list[str] = []
@@ -230,10 +256,13 @@ class RealtimeSession:
         transcription = {"model": TRANSCRIBE_MODEL}
         if self._language in LANGUAGE_NAMES:
             transcription["language"] = self._language
+        # The 2.x models reason before speaking; keep that minimal so replies stay quick.
+        reasoning = {"reasoning": {"effort": "low"}} if self._model.startswith("gpt-realtime-2") else {}
         return {
             "type": "session.update",
             "session": {
                 "type": "realtime",
+                **reasoning,
                 "instructions": self._instructions,
                 "output_modalities": ["audio"],
                 "audio": {
@@ -250,7 +279,7 @@ class RealtimeSession:
                             "interrupt_response": True,
                         },
                     },
-                    "output": {"format": {"type": "audio/pcmu"}, "voice": self._voice},
+                    "output": {"format": {"type": "audio/pcmu"}, "voice": self._voice, "speed": self._speed},
                 },
                 "tools": TOOLS,
                 "tool_choice": "auto",
@@ -290,7 +319,7 @@ class RealtimeSession:
         elif kind == "session.updated":
             if not self._ready.is_set():
                 self._ready.set()
-                print(f"[Realtime] session ready at {time.monotonic() - self._t0:.2f}s voice={self._voice}")
+                print(f"[Realtime] session ready at {time.monotonic() - self._t0:.2f}s voice={self._voice} speed={self._speed}")
                 await self._to_openai(self._greeting_request())
 
         elif kind == "input_audio_buffer.speech_started":

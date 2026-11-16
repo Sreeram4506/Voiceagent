@@ -1013,7 +1013,8 @@ let _playgroundHistory = [];
 
 async function renderAgentStudio() {
   const agents = await api('/api/employees');
-  if(!_selectedAgent && agents.length) _selectedAgent = agents[0];
+  _cachedEmployees = Array.isArray(agents) ? agents : [];
+  _selectedAgent = agents.find(a => a.id === _selectedAgent?.id) || agents[0] || null;
   _renderAgentStudio(agents);
 }
 
@@ -1083,28 +1084,23 @@ function _renderAgentStudio(agents) {
 
             <div class="bg-white rounded-2xl shadow-card p-5">
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-semibold">Voice: Piper TTS (Telugu)</h3>
-                <span class="badge badge-green">Local Offline</span>
+                <h3 class="font-semibold">Voice & Personality</h3>
+                <button onclick="editEmployee(${a.id})" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">tune</span> Edit</button>
               </div>
-              <div class="text-[12px] text-on-surface-variant mb-4 p-3 bg-surface-container-low rounded-lg">
-                <span class="material-symbols-outlined icon-sm text-tertiary">check_circle</span>
-                Using <strong>te_IN-venkatesh-medium</strong> (Piper TTS) — no cloud, no ElevenLabs, fully private.
-              </div>
-              <div class="space-y-3">
-                <div>
-                  <div class="flex justify-between mb-1">
-                    <label class="text-[11px] font-semibold text-on-surface-variant">Speech Rate</label>
-                    <span class="text-[11px] text-primary font-semibold" id="rateVal">${a.speech_rate||1.05}×</span>
+              <div class="grid grid-cols-2 gap-2 text-[12px]">
+                ${[
+                  ['Voice', (a.voice_gender||'female')==='male' ? 'Male' : 'Female'],
+                  ['Engine', _tierLabel(a.voice_tier)],
+                  ['Speech rate', (a.speech_rate||1.05)+'×'],
+                  ['Style', _styleLabel(a.speaking_style)],
+                  ['Creativity', _creativityLabel(a.temperature)],
+                  ['Greeting', a.greeting ? a.greeting : 'Auto-generated'],
+                ].map(([label, val]) => `
+                  <div class="p-2.5 bg-surface-container-low rounded-lg min-w-0">
+                    <div class="text-[10px] text-on-surface-variant">${label}</div>
+                    <div class="font-semibold text-on-surface truncate">${esc(String(val))}</div>
                   </div>
-                  <input type="range" class="range-track" min="0.7" max="1.5" step="0.05" value="${a.speech_rate||1.05}" oninput="$('rateVal').textContent=parseFloat(this.value).toFixed(2)+'×'"/>
-                </div>
-                <div>
-                  <div class="flex justify-between mb-1">
-                    <label class="text-[11px] font-semibold text-on-surface-variant">Pitch Offset</label>
-                    <span class="text-[11px] text-primary font-semibold" id="pitchVal">${a.pitch||0} semitones</span>
-                  </div>
-                  <input type="range" class="range-track" min="-6" max="6" step="1" value="${a.pitch||0}" oninput="$('pitchVal').textContent=this.value+' semitones'"/>
-                </div>
+                `).join('')}
               </div>
             </div>
 
@@ -1273,7 +1269,7 @@ function showCreateAgent(editEmp) {
               <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
                 <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">campaign</span>
                 <div class="text-[12px] font-semibold text-on-surface mt-1">Standard</div>
-                <div class="text-[10px] text-on-surface-variant">Edge Neural</div>
+                <div class="text-[10px] text-on-surface-variant">Fastest replies</div>
               </div>
             </label>
             <label class="relative cursor-pointer">
@@ -1281,7 +1277,7 @@ function showCreateAgent(editEmp) {
               <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
                 <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">auto_awesome</span>
                 <div class="text-[12px] font-semibold text-on-surface mt-1">Premium</div>
-                <div class="text-[10px] text-on-surface-variant">OpenAI TTS</div>
+                <div class="text-[10px] text-on-surface-variant">Smartest model</div>
               </div>
             </label>
             <label class="relative cursor-pointer">
@@ -1289,7 +1285,7 @@ function showCreateAgent(editEmp) {
               <div class="p-3 rounded-xl border border-surface-container-high text-center transition-all peer-checked:border-primary peer-checked:bg-primary-container peer-checked:shadow-sm hover:border-primary/50">
                 <span class="material-symbols-outlined text-[20px] text-on-surface-variant peer-checked:text-primary">mic_external_on</span>
                 <div class="text-[12px] font-semibold text-on-surface mt-1">Voice Clone</div>
-                <div class="text-[10px] text-on-surface-variant">XTTS v2</div>
+                <div class="text-[10px] text-on-surface-variant">GPU server only</div>
               </div>
             </label>
           </div>
@@ -1357,6 +1353,38 @@ function showCreateAgent(editEmp) {
           </div>
           <textarea class="textarea h-28" id="caScript" placeholder="You are Suma, a warm Telugu voice agent for banking calls…">${esc(e.script||'')}</textarea>
         </div>
+
+        <!-- Section: Calling Rules -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">rule</span> Calling Rules
+          </div>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Max Concurrent Calls</label>
+              <input type="number" class="input" id="caConcurrency" value="${e.max_concurrency||10}" min="1" max="200"/>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Max Retries per Contact</label>
+              <input type="number" class="input" id="caAttempts" value="${e.max_attempts||3}" min="1" max="10"/>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Calling Window Start</label>
+              <input type="time" class="input" id="caWinStart" value="${e.window_start||'09:00'}"/>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Calling Window End</label>
+              <input type="time" class="input" id="caWinEnd" value="${e.window_end||'20:00'}"/>
+            </div>
+          </div>
+          <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-surface-container-high cursor-pointer">
+            <div>
+              <div class="text-[12px] font-semibold text-on-surface">Agent active</div>
+              <div class="text-[10px] text-on-surface-variant">Paused agents are skipped by campaigns and auto-calling</div>
+            </div>
+            <input type="checkbox" id="caActive" class="w-4 h-4 accent-primary" ${e.paused?'':'checked'}/>
+          </label>
+        </div>
       </div>
 
       <!-- Footer -->
@@ -1388,23 +1416,44 @@ function _getAgentFormData() {
     speaking_style: selectedStyle,
     temperature: parseFloat($('caTemp')?.value || '0.85'),
     speech_rate: parseFloat($('caRate')?.value || '1.05'),
-    greeting: $('caGreeting')?.value || '',
-    max_concurrency: 10,
+    greeting: ($('caGreeting')?.value || '').trim(),
+    max_concurrency: parseInt($('caConcurrency')?.value) || 10,
+    max_attempts: parseInt($('caAttempts')?.value) || 3,
+    window_start: $('caWinStart')?.value || '09:00',
+    window_end: $('caWinEnd')?.value || '20:00',
+    paused: !$('caActive')?.checked,
   };
+}
+
+function _refreshAgentViews() {
+  return route() === 'agent-studio' ? renderAgentStudio() : route() === 'employees' ? renderEmployees() : null;
 }
 
 async function createAgent() {
   const payload = _getAgentFormData();
   const r = await api('/api/employees', {method:'POST', body:JSON.stringify(payload)});
-  if(r.id) { toast('Agent created!'); hideModal(); await renderAgentStudio(); }
+  if(r.id) { toast('Agent created!'); hideModal(); await _refreshAgentViews(); }
   else toast('Error: '+(r.error||'failed'), false);
 }
 
 async function updateAgent(id) {
   const payload = _getAgentFormData();
   const r = await api('/api/employees/'+id, {method:'PATCH', body:JSON.stringify(payload)});
-  if(r.ok) { toast('Agent updated!'); hideModal(); if(typeof renderEmployees==='function') renderEmployees(); if(typeof renderAgentStudio==='function') renderAgentStudio(); }
+  if(r.ok) { toast('Agent updated!'); hideModal(); await _refreshAgentViews(); }
   else toast('Error: '+(r.error||'failed'), false);
+}
+
+function editEmployee(id) {
+  const emp = (_cachedEmployees || []).find(e => e.id === id);
+  if (emp) showCreateAgent(emp);
+}
+
+async function toggleEmployeePause(id) {
+  const emp = (_cachedEmployees || []).find(e => e.id === id);
+  if (!emp) return;
+  const r = await api('/api/employees/'+id, {method:'PATCH', body:JSON.stringify({paused: !emp.paused})});
+  toast(r.ok ? (emp.paused ? 'Agent activated' : 'Agent paused') : 'Error: '+(r.error||'failed'), !!r.ok);
+  if (r.ok) await _refreshAgentViews();
 }
 
 async function _testCallFromModal(empId) {
@@ -1956,8 +2005,8 @@ async function renderSettings() {
         <div class="space-y-2">
           ${[
             {key:'plivo', label:'Plivo Telephony', icon:'cell_tower'},
-            {key:'openai', label:'OpenAI (Whisper STT + GPT-4o-mini)', icon:'neurology'},
-            {key:'tts', label:'Piper TTS — Local Telugu', icon:'record_voice_over'},
+            {key:'openai', label:'OpenAI (speech-to-speech agent)', icon:'neurology'},
+            {key:'tts', label:'OpenAI Realtime voice', icon:'record_voice_over'},
           ].map(item => `
             <div class="flex items-center justify-between p-3 bg-surface-container-low rounded-xl">
               <div class="flex items-center gap-2">
@@ -2060,6 +2109,10 @@ async function addMember() {
 // ═══════════════════════════════════════════════════════════
 let _cachedEmployees = [];
 
+function _tierLabel(tier) { return {standard:'Standard · Fastest', premium:'Premium · Smartest', voice_clone:'Voice Clone'}[tier||'standard'] || 'Standard · Fastest'; }
+function _styleLabel(style) { return {humanized:'Humanized', professional:'Professional', casual:'Casual', energetic:'Energetic'}[style||'humanized'] || 'Humanized'; }
+function _creativityLabel(t) { t = t || 0.85; return (t < 0.6 ? 'Precise' : t > 0.95 ? 'Creative' : 'Balanced') + ' ' + t; }
+
 async function renderEmployees() {
   $('view').innerHTML = `<div class="text-center py-16 text-on-surface-variant">Loading employees…</div>`;
   const employees = await api('/api/employees');
@@ -2075,6 +2128,7 @@ async function renderEmployees() {
         </div>
         <div class="flex gap-2">
           <button onclick="go('agent-studio')" class="btn-ghost text-[12px]"><span class="material-symbols-outlined icon-sm">settings_voice</span> Agent Studio</button>
+          <button onclick="showCreateAgent()" class="btn-primary text-[12px]"><span class="material-symbols-outlined icon-sm">add</span> New Agent</button>
         </div>
       </div>
 
@@ -2082,8 +2136,8 @@ async function renderEmployees() {
         <div class="bg-white rounded-2xl shadow-card p-16 text-center text-on-surface-variant">
           <span class="material-symbols-outlined" style="font-size:48px">record_voice_over</span>
           <p class="mt-3 font-semibold text-on-surface">No voice agents configured</p>
-          <p class="text-sm mt-1">Create an AI employee in Voice Agent Studio first</p>
-          <button onclick="go('agent-studio')" class="btn-primary mt-5">Open Voice Agent Studio</button>
+          <p class="text-sm mt-1">Create your first AI employee to start calling</p>
+          <button onclick="showCreateAgent()" class="btn-primary mt-5">Create Agent</button>
         </div>
       ` : `
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2091,8 +2145,8 @@ async function renderEmployees() {
             const langLabel = {te:'Telugu',hi:'Hindi',en:'English',ta:'Tamil',kn:'Kannada'}[emp.language] || emp.language;
             const genderIcon = (emp.voice_gender||'female')==='male' ? 'male' : 'female';
             const genderLabel = (emp.voice_gender||'female')==='male' ? 'Male' : 'Female';
-            const styleLabel = {humanized:'Humanized',professional:'Professional',casual:'Casual',energetic:'Energetic'}[emp.speaking_style||'humanized'] || 'Humanized';
-            const tierLabel = {standard:'Edge Neural',premium:'OpenAI TTS',voice_clone:'Voice Clone'}[emp.voice_tier||'standard'] || 'Standard';
+            const styleLabel = _styleLabel(emp.speaking_style);
+            const tierLabel = _tierLabel(emp.voice_tier);
             return `
             <div class="bg-white rounded-2xl border border-surface-container-high shadow-card hover:border-primary hover:shadow-hover transition-all flex flex-col">
               <!-- Card Header -->
@@ -2107,10 +2161,10 @@ async function renderEmployees() {
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button onclick='showCreateAgent(${JSON.stringify(emp).replace(/'/g,"&#39;")})' class="w-8 h-8 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container flex items-center justify-center transition-all" title="Edit Agent">
+                  <button onclick="editEmployee(${emp.id})" class="w-8 h-8 rounded-lg border border-surface-container-high hover:border-primary hover:bg-primary-container flex items-center justify-center transition-all" title="Edit Agent">
                     <span class="material-symbols-outlined text-[16px] text-on-surface-variant hover:text-primary">edit</span>
                   </button>
-                  <span class="badge ${emp.paused ? 'badge-orange' : 'badge-green'} flex-shrink-0">${emp.paused ? 'Paused' : 'Active'}</span>
+                  <button onclick="toggleEmployeePause(${emp.id})" title="${emp.paused ? 'Activate agent' : 'Pause agent'}" class="badge ${emp.paused ? 'badge-orange' : 'badge-green'} flex-shrink-0 cursor-pointer hover:opacity-75 transition-opacity">${emp.paused ? 'Paused' : 'Active'}</button>
                 </div>
               </div>
 
@@ -2120,7 +2174,7 @@ async function renderEmployees() {
                   <span class="material-symbols-outlined text-[12px]">${genderIcon}</span> ${genderLabel}
                 </span>
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant">
-                  <span class="material-symbols-outlined text-[12px]">thermostat</span> ${emp.temperature||0.85}
+                  <span class="material-symbols-outlined text-[12px]">thermostat</span> ${_creativityLabel(emp.temperature)}
                 </span>
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant">
                   <span class="material-symbols-outlined text-[12px]">speed</span> ${emp.speech_rate||1.05}x
@@ -2128,6 +2182,12 @@ async function renderEmployees() {
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-container text-[10px] font-semibold text-on-primary-container">
                   <span class="material-symbols-outlined text-[12px]">sentiment_satisfied</span> ${styleLabel}
                 </span>
+              </div>
+
+              <!-- Greeting -->
+              <div class="px-5 py-3 border-b border-surface-container-high text-[11px] text-on-surface-variant">
+                <div class="font-semibold uppercase tracking-wider text-[10px] mb-0.5">Opening greeting</div>
+                <div class="text-on-surface line-clamp-2">${emp.greeting ? esc(emp.greeting) : 'Auto-generated by the agent'}</div>
               </div>
 
               <!-- Stats -->

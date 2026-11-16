@@ -1,0 +1,87 @@
+"""Settings saved in the employee editor must reach the live call."""
+
+from datetime import datetime
+
+from app.db import SessionLocal
+from app.models import Call, CallStatus
+from app.streaming import factory
+from app.streaming.realtime_session import MODEL, RealtimeSession, persona
+from app.streaming.ws import _load_context, _persona_settings
+
+
+def login(client):
+    r = client.post("/dashboard/api/auth/login", json={"email": "admin@suma.ai", "password": "suma2026"})
+    assert r.status_code == 200
+
+
+def employee(client, employee_id):
+    return next(e for e in client.get("/dashboard/api/employees").json() if e["id"] == employee_id)
+
+
+def test_every_editor_setting_is_saved_and_returned(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={"name": "Suma"}).json()["id"]
+    saved = {
+        "name": "Priya", "language": "hi", "script": "Sell plots.", "voice_tier": "premium",
+        "voice_gender": "male", "speaking_style": "energetic", "temperature": 0.4, "speech_rate": 1.25,
+        "greeting": "नमस्ते", "max_concurrency": 25, "max_attempts": 5,
+        "window_start": "10:30", "window_end": "18:00", "paused": True,
+    }
+    assert client.patch(f"/dashboard/api/employees/{eid}", json=saved).json() == {"ok": True}
+    got = employee(client, eid)
+    assert {k: got[k] for k in saved} == saved
+
+
+def test_invalid_calling_window_is_rejected_and_nothing_changes(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={"name": "Suma"}).json()["id"]
+    r = client.patch(f"/dashboard/api/employees/{eid}", json={"window_start": "20:00", "window_end": "09:00"})
+    assert "error" in r.json()
+    assert employee(client, eid)["window_start"] == "09:00"
+
+
+def test_saved_voice_settings_reach_the_call(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={
+        "name": "Priya", "voice_gender": "male", "speaking_style": "professional",
+        "temperature": 0.4, "speech_rate": 1.2, "greeting": "నమస్కారం",
+    }).json()["id"]
+    with SessionLocal() as db:
+        from app.models import AIEmployee
+        emp = db.get(AIEmployee, eid)
+        call = Call(tenant_id=emp.tenant_id, employee_id=eid, status=CallStatus.CONNECTED, started_at=datetime.utcnow())
+        db.add(call)
+        db.commit()
+        call_id = call.id
+
+    ctx = _load_context(call_id)
+    assert ctx.extras["voice_gender"] == "male"
+    assert ctx.extras["speech_rate"] == 1.2
+    assert ctx.greeting == "నమస్కారం"
+    assert _persona_settings(ctx) == {"name": "Priya", "speaking_style": "professional", "creativity": 0.4}
+
+
+def test_settings_shape_the_realtime_session():
+    session = RealtimeSession(
+        "key", "Sell plots.", "te", voice_gender="male", model="gpt-realtime-2.1",
+        name="Priya", speaking_style="professional", creativity=0.4, speech_rate=1.2,
+    )
+    config = session._session_update()["session"]
+    assert config["audio"]["output"] == {"format": {"type": "audio/pcmu"}, "voice": "cedar", "speed": 1.2}
+    assert config["reasoning"] == {"effort": "low"}
+    assert "Your name is Priya" in config["instructions"]
+    assert "senior relationship manager" in config["instructions"]
+    assert "Stay close to the facts" in config["instructions"]
+
+    default = RealtimeSession("key", "Sell plots.", "te", model=MODEL)._session_update()["session"]
+    assert "reasoning" not in default
+    assert persona() == [persona()[0]]  # balanced creativity adds no extra rule
+
+
+def test_fallback_voice_accepts_the_numeric_speech_rate():
+    class Agent:
+        language = "te"
+        voice_tier = "standard"
+
+    tts = factory._build_tts(Agent(), openai_key=None, extras={"speech_rate": 1.05, "voice_gender": "male"})
+    assert tts._rate == "+5%" and tts._gender == "male"

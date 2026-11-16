@@ -554,18 +554,63 @@ def list_employees(request: Request):
         return out
 
 
+_AGENT_EXTRA_KEYS = ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails",
+                     "voice_gender", "temperature", "speaking_style")
+
+
+def _clamp(value, low: float, high: float, fallback: float) -> float:
+    try:
+        return round(min(high, max(low, float(value))), 2)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _agent_extras(payload: dict) -> dict:
+    """The voice and personality settings present in a save request, validated."""
+    out = {key: payload[key] for key in _AGENT_EXTRA_KEYS if key in payload}
+    if "greeting" in out:
+        out["greeting"] = str(out["greeting"] or "").strip()
+    if "speech_rate" in out:
+        out["speech_rate"] = _clamp(out["speech_rate"], 0.8, 1.3, 1.05)
+    if "temperature" in out:
+        out["temperature"] = _clamp(out["temperature"], 0.3, 1.2, 0.85)
+    if "voice_gender" in out and out["voice_gender"] not in ("female", "male"):
+        out["voice_gender"] = "female"
+    if "speaking_style" in out and out["speaking_style"] not in ("humanized", "professional", "casual", "energetic"):
+        out["speaking_style"] = "humanized"
+    return out
+
+
+def _apply_agent_rules(e: AIEmployee, payload: dict) -> str | None:
+    """Concurrency, retries and calling window from a save request. Returns an error message if invalid."""
+    from datetime import time as dtime
+
+    def hhmm(value) -> dtime:
+        h, m = str(value).split(":")[:2]
+        return dtime(int(h), int(m))
+
+    try:
+        if "max_concurrency" in payload:
+            e.max_concurrency = min(200, max(1, int(payload["max_concurrency"])))
+        if "max_attempts" in payload:
+            e.max_attempts = min(10, max(1, int(payload["max_attempts"])))
+        start = hhmm(payload["window_start"]) if payload.get("window_start") else e.window_start
+        end = hhmm(payload["window_end"]) if payload.get("window_end") else e.window_end
+    except (TypeError, ValueError):
+        return "Invalid concurrency, retries or calling window"
+    if start is not None and end is not None:
+        if start >= end:
+            return "Calling window must end after it starts"
+        e.window_start, e.window_end = start, end
+    return None
+
+
 @ops.post("/api/employees")
 def create_employee(request: Request, payload: dict):
     from datetime import time as dtime
     tid = _require_tid(request)
 
     with SessionLocal() as db:
-        def parse(hhmm: str, fallback: dtime) -> dtime:
-            try:
-                h, m = str(hhmm).split(":")
-                return dtime(int(h), int(m))
-            except Exception:
-                return fallback
         from app.models import VoiceTier
         tier_str = str(payload.get("voice_tier") or "standard")
         try:
@@ -578,23 +623,29 @@ def create_employee(request: Request, payload: dict):
             language=str(payload.get("language") or "te"),
             script=str(payload.get("script") or "You are Suma, a polite Telugu voice agent."),
             voice_tier=tier,
-            max_concurrency=int(payload.get("max_concurrency") or 10),
-            window_start=parse(payload.get("window_start"), dtime(9, 0)),
-            window_end=parse(payload.get("window_end"), dtime(20, 0)),
+            max_concurrency=10,
+            max_attempts=3,
+            window_start=dtime(9, 0),
+            window_end=dtime(20, 0),
+            paused=bool(payload.get("paused")),
         )
+        error = _apply_agent_rules(e, payload)
+        if error:
+            return {"error": error}
         db.add(e)
         db.flush()
         extras_key = _tenant_setting_key(tid, "employee_extras")
         extras = _setting(db, extras_key, {})
         extras[str(e.id)] = {
-            "greeting": payload.get("greeting") or "",
-            "speech_rate": payload.get("speech_rate") or 1.05,
-            "pitch": payload.get("pitch") or 0,
-            "archetype": payload.get("archetype") or "Female • Respectful Banking Officer",
-            "dialect": payload.get("dialect") or "Coastal Andhra Telugu",
-            "voice_gender": payload.get("voice_gender") or "female",
-            "temperature": payload.get("temperature") or 0.85,
-            "speaking_style": payload.get("speaking_style") or "humanized",
+            "greeting": "",
+            "speech_rate": 1.05,
+            "pitch": 0,
+            "archetype": "Female • Respectful Banking Officer",
+            "dialect": "Coastal Andhra Telugu",
+            "voice_gender": "female",
+            "temperature": 0.85,
+            "speaking_style": "humanized",
+            **_agent_extras(payload),
         }
         _put_setting(db, extras_key, extras)
         _log(db, tid, "agent.created", e.name)
@@ -612,13 +663,14 @@ def patch_employee(request: Request, employee_id: int, payload: dict):
         if not e:
             return {"error": "Agent not found"}
         if "name" in payload:
-            e.name = payload["name"]
+            e.name = str(payload["name"] or "").strip() or e.name
         if "language" in payload:
             e.language = payload["language"]
         if "script" in payload:
             e.script = payload["script"]
-        if "max_concurrency" in payload:
-            e.max_concurrency = int(payload["max_concurrency"])
+        error = _apply_agent_rules(e, payload)
+        if error:
+            return {"error": error}
         if "voice_tier" in payload:
             from app.models import VoiceTier
             try:
@@ -627,19 +679,9 @@ def patch_employee(request: Request, employee_id: int, payload: dict):
                 pass
         if "paused" in payload:
             e.paused = bool(payload["paused"])
-        if "window_start" in payload:
-            h, m = str(payload["window_start"]).split(":")
-            e.window_start = dtime(int(h), int(m))
-        if "window_end" in payload:
-            h, m = str(payload["window_end"]).split(":")
-            e.window_end = dtime(int(h), int(m))
         extras_key = _tenant_setting_key(tid, "employee_extras")
         extras = _setting(db, extras_key, {})
-        extra = extras.get(str(e.id), {})
-        for key in ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails",
-                    "voice_gender", "temperature", "speaking_style"):
-            if key in payload:
-                extra[key] = payload[key]
+        extra = {**extras.get(str(e.id), {}), **_agent_extras(payload)}
         extras[str(e.id)] = extra
         _put_setting(db, extras_key, extras)
         _log(db, tid, "agent.updated", e.name)
@@ -1166,9 +1208,6 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
                 amount_paise=100_000, note="auto-topup",
             ))
             db.flush()
-
-        # Ensure employee is not paused
-        emp.paused = False
 
         lead = Lead(
             tenant_id=tid,

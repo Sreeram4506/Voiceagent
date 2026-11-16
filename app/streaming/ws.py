@@ -15,7 +15,7 @@ from app.services.call_engine import CallResult, finalize_call
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.protocol import parse_event
-from app.streaming.realtime_session import RealtimeSession
+from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, persona
 from app.streaming.session import StreamSession
 from datetime import datetime
 
@@ -52,7 +52,7 @@ def _load_context(call_id: int) -> CallContext | None:
         if call is None:
             return None
         employee = db.get(AIEmployee, call.employee_id)
-        row = db.get(AppSetting, f"t{employee.tenant_id}_employee_extras")
+        row = db.get(AppSetting, f"t{employee.tenant_id}:employee_extras")
         all_extras = row.value if row else {}
         extras = all_extras.get(str(employee.id), {}) if isinstance(all_extras, dict) else {}
         fields = call.captured_fields or {}
@@ -64,6 +64,21 @@ def _load_context(call_id: int) -> CallContext | None:
         )
 
 
+def _number(value, fallback: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _persona_settings(ctx: CallContext) -> dict:
+    return {
+        "name": ctx.employee.name or "",
+        "speaking_style": str(ctx.extras.get("speaking_style") or "humanized"),
+        "creativity": _number(ctx.extras.get("temperature"), 0.85),
+    }
+
+
 def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
     if ctx is None or not factory.use_realtime(ctx.employee.voice_tier.value, ctx.mode):
         return None
@@ -73,6 +88,9 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
         language=ctx.employee.language,
         greeting=ctx.greeting,
         voice_gender=ctx.extras.get("voice_gender", "female"),
+        model=MODEL_BY_TIER.get(ctx.employee.voice_tier.value, MODEL),
+        speech_rate=_number(ctx.extras.get("speech_rate"), 1.0),
+        **_persona_settings(ctx),
     )
     session.connect()
     return session
@@ -174,7 +192,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         stt=stt,
         llm=llm,
         tts=tts,
-        script=ctx.employee.script,
+        script=ctx.employee.script + "\n\n" + "\n".join(persona(**_persona_settings(ctx))),
         language=ctx.employee.language,
         voice_tier=ctx.employee.voice_tier.value,
         stream_sid=stream_sid,
