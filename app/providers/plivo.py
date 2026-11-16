@@ -38,12 +38,15 @@ class PlivoTelephony:
     ) -> DialResult:
         answer_url = f"{self._public_url}/v1/plivo/answer/{custom_field}"
         hangup_url = f"{self._public_url}/v1/plivo/status/{custom_field}"
+        ring_url = f"{self._public_url}/v1/plivo/ring/{custom_field}"
 
         payload = {
             "from": self._strip_plus(from_number),
             "to": self._strip_plus(to_e164),
             "answer_url": answer_url,
             "answer_method": "POST",
+            "ring_url": ring_url,
+            "ring_method": "POST",
             "hangup_url": hangup_url,
             "hangup_method": "POST",
             "ring_timeout": "30",

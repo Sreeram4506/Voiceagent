@@ -58,7 +58,7 @@ def seed_call() -> int:
 
 
 def use_providers(monkeypatch, stt, llm, tts=None):
-    monkeypatch.setattr(factory, "build_providers", lambda employee: (stt, llm, tts or MockAsyncTTS()))
+    monkeypatch.setattr(factory, "build_providers", lambda employee, extras=None: (stt, llm, tts or MockAsyncTTS()))
 
 
 def connect(client, call_id):

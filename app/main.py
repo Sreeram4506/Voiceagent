@@ -30,7 +30,7 @@ from app.services.compliance import InMemoryDNDRegistry
 from app.services.scheduler import dispatch_due
 from app.dashboard import router as dashboard_router
 from app.dashboard_ops import ops as dashboard_ops_router
-from app.streaming.ws import router as stream_router, stream_token
+from app.streaming.ws import discard_prepared, prepare_call, router as stream_router, stream_token
 from app.auth import (
     SESSION_COOKIE,
     authenticate_user,
@@ -191,10 +191,18 @@ def _startup() -> None:
         print(f"[Startup] XTTS warmup skipped: {e}")
 
 
+@app.post("/v1/plivo/ring/{call_id}")
+async def plivo_ring(call_id: int):
+    """Plivo hits this when the phone starts ringing. Warms up the voice agent so it can speak on pickup."""
+    prepare_call(call_id)
+    return Response(content="OK", media_type="text/plain")
+
+
 @app.post("/v1/plivo/answer/{call_id}")
 async def plivo_answer(call_id: int, request: Request):
     """Plivo hits this when the callee answers. Returns XML that opens a bidirectional audio stream."""
     settings = get_settings()
+    prepare_call(call_id)
     token = stream_token(call_id)
     ws_url = settings.public_url.replace("http://", "wss://").replace("https://", "wss://")
     xml = (
@@ -212,6 +220,7 @@ async def plivo_answer(call_id: int, request: Request):
 @app.post("/v1/plivo/status/{call_id}")
 async def plivo_status(call_id: int, request: Request):
     """Plivo hangup/status callback. Updates call record with outcome and duration."""
+    discard_prepared(call_id)
     try:
         form = await request.form()
         data = dict(form)

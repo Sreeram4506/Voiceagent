@@ -1,5 +1,8 @@
 """Chooses speech and LLM providers for a call.
 
+Default: OpenAI Realtime speech-to-speech (see realtime_session.py). The STT/LLM/TTS
+relay below is the fallback when Realtime is unavailable, and serves voice_clone agents.
+
 TTS priority:
   voice_clone tier → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
   Telugu/Hindi     → EdgeTTS (Microsoft Neural, ~0.9s, native pronunciation)
@@ -68,6 +71,13 @@ def _build_tts(employee, openai_key, extras=None):
         print(f"[Factory] Piper TTS unavailable ({e})")
 
     return MockAsyncTTS()
+
+
+def use_realtime(voice_tier: str, mode: str) -> bool:
+    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic to turn it off."""
+    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
+        return False
+    return bool(os.getenv("OPENAI_API_KEY")) and mode != "broadcast" and voice_tier != "voice_clone"
 
 
 def build_providers(employee, extras=None):
