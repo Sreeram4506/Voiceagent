@@ -132,11 +132,17 @@ class StreamSession:
 
     # ---- filler audio (instant response while STT/LLM run) ---------------
 
-    _FILLER_TEXTS = ["అవున...", "సరే...", "హా..."]
+    _FILLER_TEXTS = {
+        "te": ["అవునా...", "సరే...", "హా..."],
+        "hi": ["अच्छा...", "हाँ...", "जी..."],
+        "en": ["Hmm...", "Right...", "Okay..."],
+        "ta": ["ஆமா...", "சரி..."],
+        "kn": ["ಹೌದಾ...", "ಸರಿ..."],
+    }
 
     async def _warm_fillers(self) -> None:
         """Pre-synthesize short filler phrases at session start."""
-        for text in self._FILLER_TEXTS:
+        for text in self._FILLER_TEXTS.get(self.language[:2], []):
             try:
                 pcm = await self.tts.synthesize(text, self.language, self.voice_tier)
                 self._filler_cache.append(pcm)

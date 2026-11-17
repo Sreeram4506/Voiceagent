@@ -1,18 +1,17 @@
 """Chooses speech and LLM providers for a call.
 
-Default: OpenAI Realtime speech-to-speech (see realtime_session.py). The STT/LLM/TTS
-relay below is the fallback when Realtime is unavailable, and serves voice_clone agents.
+Default: the low-cost STT -> LLM -> TTS relay. OpenAI Realtime speech-to-speech
+(realtime_session.py) is faster but costs far more; turn it on with VA_VOICE_PIPELINE=realtime.
 
 TTS priority:
-  voice_clone tier → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
-  Telugu/Hindi     → EdgeTTS (Microsoft Neural, ~0.9s, native pronunciation)
-  English          → OpenAI tts-1 (best English quality)
-  Fallback         → Piper (offline) → Mock
+  voice_clone tier       → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
+  te / hi / en / ta / kn → EdgeTTS (Microsoft Neural, free, native pronunciation)
+  Other languages        → OpenAI tts-1 → Piper (offline) → Mock
 
 voice_clone: set voice_tier="voice_clone" on the employee and place a 10-30s
   WAV at voice_profiles/reference.wav (or set XTTS_REFERENCE_WAV env var).
 
-STT: OpenAI Whisper
+STT: OpenAI gpt-4o-mini-transcribe
 LLM: OpenAI GPT-4o-mini → Claude Haiku → Mock
 """
 
@@ -47,26 +46,19 @@ def _build_tts(employee, openai_key, extras=None):
         except Exception as e:
             print(f"[Factory] XTTS unavailable ({e}), falling back to EdgeTTS")
 
-    # Premium tier: OpenAI tts-1 — higher quality for any language
-    if str(voice_tier) == "premium" and openai_key:
-        from app.streaming.openai_tts import OpenAITTS
-        print(f"[Factory] OpenAI TTS (premium) lang={lang} speed={speech_rate}")
-        return OpenAITTS(openai_key, voice="nova", speed=speech_rate)
-
-    # Telugu & Hindi standard: Microsoft Edge Neural voices — free, native pronunciation
-    if lang in ("te", "hi"):
-        try:
-            from app.streaming.edge_tts_provider import EdgeTTS
+    # Microsoft Edge Neural voices for every tier: free, native Indian-language pronunciation
+    try:
+        from app.streaming.edge_tts_provider import EDGE_LANGUAGES, EdgeTTS
+        if lang in EDGE_LANGUAGES:
             rate = f"{round((speech_rate - 1) * 100):+d}%"
             print(f"[Factory] EdgeTTS lang={lang} gender={gender} rate={rate}")
             return EdgeTTS(gender=gender, rate=rate)
-        except Exception as e:
-            print(f"[Factory] EdgeTTS unavailable ({e}), falling back")
+    except Exception as e:
+        print(f"[Factory] EdgeTTS unavailable ({e}), falling back")
 
-    # English standard: OpenAI tts-1
-    if lang == "en" and openai_key:
+    if openai_key:
         from app.streaming.openai_tts import OpenAITTS
-        print("[Factory] OpenAI TTS (English)")
+        print(f"[Factory] OpenAI TTS lang={lang} speed={speech_rate}")
         return OpenAITTS(openai_key, voice="nova", speed=speech_rate)
 
     # Piper — local offline fallback
@@ -81,8 +73,8 @@ def _build_tts(employee, openai_key, extras=None):
 
 
 def use_realtime(voice_tier: str, mode: str) -> bool:
-    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic to turn it off."""
-    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
+    """OpenAI Realtime speech-to-speech is opt-in (VA_VOICE_PIPELINE=realtime) because it costs far more per minute."""
+    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "classic") != "realtime":
         return False
     return bool(os.getenv("OPENAI_API_KEY")) and mode != "broadcast" and voice_tier != "voice_clone"
 

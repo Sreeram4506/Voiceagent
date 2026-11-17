@@ -1,10 +1,13 @@
-"""OpenAI Whisper STT — buffers audio during the utterance, transcribes on end."""
+"""OpenAI speech-to-text — buffers audio during the utterance, transcribes on end."""
 
 import io
 import os
 import struct
 
 import openai
+
+# gpt-4o-mini-transcribe: about half the per-minute price of whisper-1, and better on Telugu.
+STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")
 
 
 class OpenAISTT:
@@ -47,7 +50,7 @@ class OpenAISTT:
             return ""
         wav = _pcm_to_wav(bytes(self._buffer), sample_rate=8000)
         lang = self._language[:2]
-        kwargs = {"model": "whisper-1", "file": ("audio.wav", wav, "audio/wav")}
+        kwargs = {"model": STT_MODEL, "file": ("audio.wav", wav, "audio/wav")}
         if lang in self.WHISPER_LANGUAGES:
             kwargs["language"] = lang
         elif lang in self._LANG_PROMPTS:

@@ -15,7 +15,10 @@ _VOICE_MAP = {
     "te": {"female": "te-IN-ShrutiNeural", "male": "te-IN-MohanNeural"},
     "hi": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
     "en": {"female": "en-IN-NeerjaNeural", "male": "en-IN-PrabhatNeural"},
+    "ta": {"female": "ta-IN-PallaviNeural", "male": "ta-IN-ValluvarNeural"},
+    "kn": {"female": "kn-IN-SapnaNeural", "male": "kn-IN-GaganNeural"},
 }
+EDGE_LANGUAGES = frozenset(_VOICE_MAP)
 
 _DEFAULT_RATE = "+0%"
 _DEFAULT_VOLUME = "+0%"
