@@ -1093,6 +1093,7 @@ function _renderAgentStudio(agents) {
                   ['Engine', _tierLabel(a.voice_tier)],
                   ['Speech rate', (a.speech_rate||1.05)+'×'],
                   ['Style', _styleLabel(a.speaking_style)],
+                  ['Lang Mix', _langStyleLabel(a.language_style)],
                   ['Creativity', _creativityLabel(a.temperature)],
                   ['Greeting', a.greeting ? a.greeting : 'Auto-generated'],
                 ].map(([label, val]) => `
@@ -1201,6 +1202,7 @@ function showCreateAgent(editEmp) {
   const genderVal = e.voice_gender || 'female';
   const tempVal = e.temperature || 0.85;
   const styleVal = e.speaking_style || 'humanized';
+  const langStyleVal = e.language_style || 'natural_mix';
   const rateVal = e.speech_rate || 1.05;
   const langVal = e.language || 'te';
   const tierVal = e.voice_tier || 'standard';
@@ -1330,6 +1332,25 @@ function showCreateAgent(editEmp) {
             `).join('')}
           </div>
 
+          <!-- Language Style -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Language Style</label>
+          <div class="grid grid-cols-3 gap-2 mb-3" id="caLangStyleWrap">
+            ${[
+              {val:'pure', icon:'translate', label:'Pure', desc:'Minimal English'},
+              {val:'natural_mix', icon:'mix_cross', label:'Natural Mix', desc:'Telugu + English words'},
+              {val:'english_heavy', icon:'language', label:'English Heavy', desc:'More English mixing'},
+            ].map(s=>\`
+              <button type="button" data-langstyle="\${s.val}" onclick="document.querySelectorAll('#caLangStyleWrap button').forEach(b=>{b.classList.remove('border-primary','bg-primary-container','shadow-sm');b.classList.add('border-surface-container-high')});this.classList.remove('border-surface-container-high');this.classList.add('border-primary','bg-primary-container','shadow-sm')"
+                class="p-2.5 rounded-xl border text-left transition-all cursor-pointer \${langStyleVal===s.val?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
+                <div class="flex flex-col items-center gap-1 text-center">
+                  <span class="material-symbols-outlined text-[16px] \${langStyleVal===s.val?'text-primary':'text-on-surface-variant'}">\${s.icon}</span>
+                  <div class="text-[11px] font-semibold text-on-surface">\${s.label}</div>
+                  <div class="text-[9px] text-on-surface-variant">\${s.desc}</div>
+                </div>
+              </button>
+            \`).join('')}
+          </div>
+
           <!-- Temperature -->
           <div class="flex items-center justify-between mb-1">
             <label class="text-[11px] font-semibold text-on-surface-variant">Creativity (Temperature)</label>
@@ -1413,6 +1434,7 @@ function showCreateAgent(editEmp) {
 function _getAgentFormData() {
   const selectedGender = document.querySelector('#caGenderWrap button.bg-primary')?.dataset?.gender || 'female';
   const selectedStyle = document.querySelector('#caStyleWrap button.bg-primary-container')?.dataset?.style || 'humanized';
+  const selectedLangStyle = document.querySelector('#caLangStyleWrap button.bg-primary-container')?.dataset?.langstyle || 'natural_mix';
   const selectedTier = document.querySelector('input[name="caTier"]:checked')?.value || 'standard';
   return {
     name: $('caName')?.value || 'Suma',
@@ -1421,6 +1443,7 @@ function _getAgentFormData() {
     voice_gender: selectedGender,
     voice_tier: selectedTier,
     speaking_style: selectedStyle,
+    language_style: selectedLangStyle,
     temperature: parseFloat($('caTemp')?.value || '0.85'),
     speech_rate: parseFloat($('caRate')?.value || '1.05'),
     greeting: ($('caGreeting')?.value || '').trim(),
@@ -1441,6 +1464,7 @@ async function _generatePrompt() {
   btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> Generating…';
   try {
     const selectedStyle = document.querySelector('#caStyleWrap button.bg-primary-container')?.dataset?.style || 'humanized';
+    const selectedLangStyle = document.querySelector('#caLangStyleWrap button.bg-primary-container')?.dataset?.langstyle || 'natural_mix';
     const r = await api('/api/generate-prompt', {
       method: 'POST',
       body: JSON.stringify({
@@ -1448,6 +1472,7 @@ async function _generatePrompt() {
         name: $('caName')?.value || 'Suma',
         language: $('caLang')?.value || 'te',
         speaking_style: selectedStyle,
+        language_style: selectedLangStyle,
       }),
     });
     if (r.prompt) {
@@ -2149,6 +2174,7 @@ let _cachedEmployees = [];
 
 function _tierLabel(tier) { return {standard:'Standard · Fastest', premium:'Premium · Smartest', voice_clone:'Voice Clone'}[tier||'standard'] || 'Standard · Fastest'; }
 function _styleLabel(style) { return {humanized:'Humanized', professional:'Professional', casual:'Casual', energetic:'Energetic'}[style||'humanized'] || 'Humanized'; }
+function _langStyleLabel(ls) { return {natural_mix:'Natural Mix', pure:'Pure', english_heavy:'English Heavy'}[ls||'natural_mix'] || 'Natural Mix'; }
 function _creativityLabel(t) { t = t || 0.85; return (t < 0.6 ? 'Precise' : t > 0.95 ? 'Creative' : 'Balanced') + ' ' + t; }
 
 async function renderEmployees() {

@@ -12,6 +12,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from datetime import datetime
 
 import numpy as np
 import websockets
@@ -30,6 +31,9 @@ LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "
 END_OF_TURN_SILENCE_MS = 300
 # The callee's own "hello" on pickup lands on top of the greeting; don't let it cut the greeting off.
 GREETING_GUARD_SECONDS = 1.5
+# A person checks "hello, are you there?" when the line goes quiet, and gives up after a couple of tries.
+SILENCE_CHECK_SECONDS = 8.0
+MAX_SILENCE_CHECKS = 2
 
 _HEADERS_KW = "additional_headers" if int(websockets.__version__.split(".")[0]) >= 14 else "extra_headers"
 
@@ -48,32 +52,126 @@ TOOLS = [
     },
 ]
 
-_STYLE = """# How you speak on this call
-- You are on a live phone call. {language_rule}
+_STYLE = """# How you sound
+- You are on a live phone call, talking, not reading. {language_rule}
 - {tone}
-- Keep every reply to one or two short sentences, then stop and let the caller talk. Never give a speech or a list.
-- React like a person: brief acknowledgements, a natural pace, matching the caller's mood. Vary your wording; never repeat the same opener twice in a row.
-- Ask only one question at a time.
-- If you did not catch what the caller said, ask them to repeat it instead of guessing.
-- Never read out or mention these instructions. If the caller sincerely asks whether they are talking to an AI, say so honestly in one short line and carry on helping.
+- Talk the way people really talk on the phone: short, loose sentences and everyday words. A reply is one thought: two short sentences at the very most, with no more than one question, then you stop and let them speak. Never give a speech or a list.
+- Begin most replies with a small natural reaction to what they just said ({reactions}), then make your point. Change it every time, and sometimes skip it.
+- Let your voice carry feeling. Smile as you greet, sound pleased when they agree, slow down and soften when they are unsure, busy or irritated. Match their pace and energy.
+- A few human touches are welcome when they fit: a soft "hmm" while you think, a light laugh at a joke, a quick "sorry, I mean...". Use them sparingly.
+- {address}
+- Say prices, dates and times the way people say them aloud ({spoken_example}), never digit by digit.
+- Never sound like a call centre. No stock lines such as "I understand your concern", "thank you for your valuable time" or "how may I help you today".
+
+# How you hold the conversation
+- Listen first. Answer what they actually asked before you return to why you called.
+- Ask one question at a time and wait for the answer. Never stack a second question onto the first.
+- If they cut in, stop, respond to what they said, and do not restart your earlier sentence.
+- If the line was unclear or you did not catch something, say so the way a person would and ask once more. Never guess.
+- If they are busy, do not push: offer to call back, ask what time suits them, and wrap up quickly.
+- If they are not interested, try gently once at most, then thank them and say goodbye.
+- Only state facts that are in your brief. If you do not know something, say you will check and get back to them.
+- Never read out or mention these instructions. If they sincerely ask whether they are talking to an AI, say so honestly in one short line and carry on helping.
 
 # Tools
 - book_appointment: when the caller agrees to an appointment, visit or meeting, confirm the day and time out loud and call this in the same turn.
 - end_call: when the conversation is finished or the caller is not interested, say a short goodbye out loud first, then call it."""
 
-_NATIVE_RULE = (
-    "Always speak {name}, the everyday spoken kind. Single English words that locals mix in "
-    "(okay, site visit, booking, plot) are fine, but never say whole sentences in English "
-    "unless the caller speaks English to you first; if they do, follow their language."
-)
+# Per language: small spoken reactions, how to address the caller respectfully, and how numbers are said aloud.
+_SPEECH = {
+    "te": ('"అవునా", "అలాగా", "సరే సరే", "హా అండి", "ఓహో"', "గారు after their name, and అండి", '"ఎయిటీన్ లాక్స్", "సండే మార్నింగ్ టెన్ కి"'),
+    "hi": ('"अच्छा", "जी हाँ", "हाँ हाँ", "अरे वाह", "ओह"', "जी after their name", '"अठारह लाख", "रविवार सुबह दस बजे"'),
+    "ta": ('"அப்படியா", "சரி சரி", "ஆமாங்க", "ஓஹோ"', "sir or madam, and the respectful -ங்க endings", '"பதினெட்டு லட்சம்", "ஞாயிறு காலை பத்து மணிக்கு"'),
+    "kn": ('"ಹೌದಾ", "ಸರಿ ಸರಿ", "ಆಯ್ತು", "ಓಹೋ"', "ಅವರೇ after their name, or sir / madam", '"ಹದಿನೆಂಟು ಲಕ್ಷ", "ಭಾನುವಾರ ಬೆಳಿಗ್ಗೆ ಹತ್ತು ಗಂಟೆಗೆ"'),
+    "en": ('"oh nice", "right", "got it", "sure sure", "hmm"', "sir or ma'am, or their first name once they are comfortable", '"eighteen lakhs", "Sunday morning at ten"'),
+}
+
+_LANGUAGE_STYLES = {
+    "natural_mix": (
+        "Speak the way educated {city} people actually talk on the phone: {name} grammar, verb endings and sentence "
+        "structure, but freely use the English words people always say in conversation. {swap_list}"
+        "Never translate an English word into formal {name} when no one says it that way. "
+        "Never say a whole sentence in English unless the caller does first. "
+        "Mirror the caller: if they speak purer {name}, ease off the English; if they mix more, follow them."
+    ),
+    "pure": (
+        "Speak pure, natural {name} — the warm everyday spoken kind, not bookish or literary. "
+        "Avoid English words where a common {name} word exists, but keep universal words people always say "
+        "(okay, hello, bye). Never say whole sentences in English unless the caller does first."
+    ),
+    "english_heavy": (
+        "Speak mostly in {name} sentence structure and endings, but lean heavily on English nouns, verbs and "
+        "phrases the way young urban speakers do. Keep the {name} grammar and respectful endings; "
+        "just let English fill in freely. Never switch to full English sentences unless the caller does."
+    ),
+}
+
+_SWAP_LISTS = {
+    "te": (
+        'Say these English words, NOT their formal Telugu equivalents: టైమ్ (not సమయం), రేట్ (not ధర), '
+        'ప్లాట్ (not స్థలం), సైట్ విజిట్ (not సందర్శన), బుక్ చేస్తాను (not నిర్ధారిస్తాను), '
+        'కాల్ బ్యాక్ (not తిరిగి కాల్), లొకేషన్ (not ప్రదేశం), కన్ఫర్మ్ (not ధృవీకరిస్తాను), '
+        'ఇంట్రెస్ట్ (not ఆసక్తి), ఎవైలబుల్ (not అందుబాటులో), అప్డేట్ (not తాజా సమాచారం), '
+        'ఫ్రీ (not ఉచితం). '
+    ),
+    "hi": (
+        'Say these English words, NOT their formal Hindi equivalents: टाइम (not समय), रेट (not दर/मूल्य), '
+        'प्लॉट (not भूखंड), साइट विज़िट (not निरीक्षण), बुक करता हूँ (not आरक्षित), '
+        'कॉल बैक (not वापस फ़ोन), लोकेशन (not स्थान), कन्फ़र्म (not पुष्टि), '
+        'इंटरेस्ट (not रुचि), अवेलेबल (not उपलब्ध), अपडेट (not अद्यतन). '
+    ),
+    "ta": "",
+    "kn": "",
+    "en": "",
+}
+
+_EXAMPLE_LINES = {
+    "te": (
+        "\nExamples of how you should sound:\n"
+        '- "ఒక్క నిమిషం టైమ్ ఉందా అండి?"\n'
+        '- "రేట్ ఎయిటీన్ లాక్స్ నుంచి స్టార్ట్ అవుతుంది"\n'
+        '- "ఒకసారి సైట్ విజిట్ కి వస్తారా?"\n'
+        '- "నేను కన్ఫర్మ్ చేస్తాను, SMS కూడా సెండ్ చేస్తాను"\n'
+        '- "ఈ వీకెండ్ ఫ్రీ ఉంటే, శనివారం మార్నింగ్ 10 కి ఓకేనా?"'
+    ),
+    "hi": (
+        "\nExamples of how you should sound:\n"
+        '- "एक मिनट टाइम है क्या?"\n'
+        '- "रेट अठारह लाख से स्टार्ट होता है"\n'
+        '- "एक बार साइट विज़िट कर लीजिए"\n'
+        '- "मैं कन्फ़र्म कर देता हूँ, SMS भी भेज दूँगा"'
+    ),
+    "ta": "",
+    "kn": "",
+    "en": "",
+}
+
+_CITY_NAMES = {"te": "Hyderabad", "hi": "Delhi", "ta": "Chennai", "kn": "Bangalore", "en": "Indian"}
+
 _ENGLISH_RULE = "Speak simple, friendly Indian English. If the caller switches to another language, switch with them."
 
 TONES = {
-    "humanized": "Sound warm, relaxed and respectful, like a friendly local person on the phone, not a call centre script.",
-    "professional": "Sound polished, clear and to the point, like a senior relationship manager. Skip small talk and fillers.",
+    "humanized": "Sound warm, relaxed and respectful, like a friendly local person who enjoys talking to people.",
+    "professional": "Sound polished, calm and to the point, like a senior relationship manager. Keep reactions brief and skip small talk.",
     "casual": "Sound easygoing and friendly, like chatting with a neighbour. A little light humour is fine.",
-    "energetic": "Sound upbeat, enthusiastic and persuasive. Keep the energy high and gently steer towards a yes.",
+    "energetic": "Sound upbeat, enthusiastic and persuasive, with a smile in your voice. Gently steer towards a yes.",
 }
+
+_DAY_PARTS = ((5, "early morning"), (12, "morning"), (16, "afternoon"), (20, "evening"), (24, "night"))
+
+
+def call_details(caller_name: str = "", notes: str = "", local_time: datetime | None = None) -> str:
+    """What the agent knows about this particular call: the day and time there, and anything noted about the person."""
+    lines = []
+    if local_time is not None:
+        part = next(label for hour, label in _DAY_PARTS if local_time.hour < hour) if local_time.hour >= 5 else "night"
+        lines.append(
+            f"- It is {local_time:%A} {part} for the caller, {local_time.day} {local_time:%B}. "
+            "When you suggest a day, use real days counted from today."
+        )
+    if notes.strip():
+        lines.append(f"- What we know about them: {notes.strip()[:400]}")
+    return "# This call\n" + "\n".join(lines) if lines else ""
 
 
 def persona(name: str = "", speaking_style: str = "humanized", creativity: float = 0.85) -> list[str]:
@@ -132,19 +230,47 @@ class RealtimeSession:
         speaking_style: str = "humanized",
         creativity: float = 0.85,
         speech_rate: float = 1.0,
+        caller_name: str = "",
+        caller_notes: str = "",
+        local_time: datetime | None = None,
+        language_style: str = "natural_mix",
     ):
         self._api_key = api_key
         self._model = model
         self._speed = min(1.5, max(0.25, speech_rate))
         self._language = language
         self._greeting = greeting.strip()
+        self._caller_name = " ".join(caller_name.split())[:60]
         self._voice = VOICES.get(voice_gender, VOICES["female"])
         if language == "en":
             rule = _ENGLISH_RULE
         else:
-            rule = _NATIVE_RULE.format(name=LANGUAGE_NAMES.get(language, language))
-        style = _STYLE.format(language_rule=rule, tone="\n- ".join(persona(name, speaking_style, creativity)))
-        self._instructions = f"{script}\n\n{style}"
+            lang_name = LANGUAGE_NAMES.get(language, language)
+            city = _CITY_NAMES.get(language, "local")
+            style_key = language_style if language_style in _LANGUAGE_STYLES else "natural_mix"
+            swap_list = _SWAP_LISTS.get(language, "") if style_key != "pure" else ""
+            rule = _LANGUAGE_STYLES[style_key].format(name=lang_name, city=city, swap_list=swap_list)
+            if style_key != "pure":
+                examples = _EXAMPLE_LINES.get(language, "")
+                if examples:
+                    rule += examples
+        reactions, respect, spoken_example = _SPEECH.get(language, _SPEECH["en"])
+        if self._caller_name:
+            address = (
+                f"You are speaking with {self._caller_name}. Use their name now and then, not in every sentence, "
+                f"and always respectfully: {respect}."
+            )
+        else:
+            address = f"You do not know their name, so never guess one. Stay respectful: {respect}."
+        style = _STYLE.format(
+            language_rule=rule,
+            tone="\n- ".join(persona(name, speaking_style, creativity)),
+            reactions=reactions,
+            address=address,
+            spoken_example=spoken_example,
+        )
+        details = call_details(self._caller_name, caller_notes, local_time)
+        self._instructions = "\n\n".join(part for part in (script, details, style) if part)
 
         self.actions: list[str] = []
         self.ended = False
@@ -168,6 +294,13 @@ class RealtimeSession:
         self._spoken: set[str] = set()
         self._guard_until = 0.0
         self._t0 = time.monotonic()
+        # Silence on the line: who is talking, when it last went quiet, and how often we have checked in.
+        self._caller_speaking = False
+        self._responding = False
+        self._quiet_since = 0.0
+        self._silence_checks = 0
+        self._giving_up = False
+        self._silence_task: asyncio.Task | None = None
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -199,13 +332,16 @@ class RealtimeSession:
         """The phone audio stream is live: play whatever the agent has already said."""
         self.stream_sid, self._send, self._on_end = stream_sid, send, on_end
         self._guard_until = time.monotonic() + GREETING_GUARD_SECONDS
+        self._quiet_since = time.monotonic()
+        if self._silence_task is None:
+            self._silence_task = asyncio.create_task(self._watch_silence())
         pending, self._pending_out = self._pending_out, []
         print(f"[Realtime] phone attached at {time.monotonic() - self._t0:.2f}s, {len(pending)} audio chunks ready")
         for item_id, pcm in pending:
             await self._play(item_id, pcm)
 
     async def cancel(self) -> None:
-        for task in (self._end_task, self._task):
+        for task in (self._silence_task, self._end_task, self._task):
             if task and not task.done() and task is not asyncio.current_task():
                 task.cancel()
                 with suppress(asyncio.CancelledError, Exception):
@@ -293,9 +429,11 @@ class RealtimeSession:
                 f'in a warm voice, without adding anything else: "{self._greeting}"'
             )
         else:
+            check = f"check that you are speaking with {self._caller_name}, " if self._caller_name else ""
             opening = (
-                "The person has just picked up. Greet them warmly, say who you are and why you are "
-                "calling in one short sentence, then stop and listen."
+                f"The person has just picked up. Say hello the way a real caller would, {check}"
+                "say your name and where you are calling from, and ask if they have a minute, "
+                "all in one short breath. Then stop and wait for their answer before explaining anything."
             )
         return {
             "type": "response.create",
@@ -323,10 +461,22 @@ class RealtimeSession:
                 await self._to_openai(self._greeting_request())
 
         elif kind == "input_audio_buffer.speech_started":
+            self._caller_speaking = True
             await self._barge_in()
 
+        elif kind == "input_audio_buffer.speech_stopped":
+            self._caller_speaking = False
+            self._quiet_since = time.monotonic()
+
         elif kind == "input_audio_buffer.committed":
+            self._caller_speaking = False
+            self._quiet_since = time.monotonic()
+            self._silence_checks = 0  # they are there after all
+            self._giving_up = False
             self._items.setdefault(event.get("item_id", ""), ["caller", ""])
+
+        elif kind == "response.created":
+            self._responding = True
 
         elif kind == "conversation.item.input_audio_transcription.completed":
             text = event.get("transcript", "")
@@ -342,7 +492,11 @@ class RealtimeSession:
             print(f"[Realtime] agent: {text!r}")
 
         elif kind == "response.done":
-            await self._handle_tools(event.get("response", {}))
+            self._responding = False
+            response = event.get("response", {})
+            await self._handle_tools(response)
+            if self._giving_up and response.get("status") == "completed" and self._end_task is None:
+                self._end_task = asyncio.create_task(self._finish())
 
         elif kind == "error":
             error = event.get("error", {})
@@ -388,6 +542,44 @@ class RealtimeSession:
                 "content_index": 0,
                 "audio_end_ms": heard_ms,
             })
+
+    # ---- silence on the line ---------------------------------------------
+
+    def _silent_for(self, now: float) -> float:
+        """Seconds nobody has spoken, counted from when the agent's last words finished playing."""
+        if self._send is None or self.ended or self._end_task is not None:
+            return 0.0
+        if self._caller_speaking or self._responding:
+            return 0.0
+        return max(0.0, now - max(self._quiet_since, self._play_until))
+
+    async def _watch_silence(self) -> None:
+        while not self.ended and self._end_task is None:
+            await asyncio.sleep(0.5)
+            if self._silent_for(time.monotonic()) >= SILENCE_CHECK_SECONDS:
+                await self._check_in()
+
+    async def _check_in(self) -> None:
+        """The caller has gone quiet: ask if they are still there, and give up politely after a couple of tries."""
+        self._silence_checks += 1
+        self._quiet_since = time.monotonic()
+        self._responding = True
+        if self._silence_checks > MAX_SILENCE_CHECKS:
+            self._giving_up = True
+            ask = (
+                "The caller still has not answered. In one short line, say the line seems to be unclear "
+                "and that you will try them again later, and say goodbye."
+            )
+        else:
+            ask = (
+                "The caller has gone quiet for several seconds. In three or four words, the way a person would, "
+                "check that they are still there and can hear you. Do not repeat what you said before."
+            )
+        print(f"[Realtime] silence on the line, check {self._silence_checks}")
+        await self._to_openai({
+            "type": "response.create",
+            "response": {"instructions": f"{self._instructions}\n\n{ask}", "tool_choice": "none"},
+        })
 
     async def _handle_tools(self, response: dict) -> None:
         calls = [item for item in response.get("output") or [] if item.get("type") == "function_call"]

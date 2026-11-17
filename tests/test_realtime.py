@@ -108,3 +108,100 @@ def test_booking_is_recorded_and_end_call_hangs_up_after_the_goodbye():
         assert ended and session.ended
 
     asyncio.run(scenario())
+
+
+def test_agent_knows_who_it_is_calling_and_what_time_it_is_there():
+    from datetime import datetime
+
+    session, *_ = make_session(caller_name="Ravi  Kumar", caller_notes="Asked about east-facing plots",
+                               local_time=datetime(2026, 11, 16, 18, 30))
+    assert "You are speaking with Ravi Kumar" in session._instructions
+    assert "Monday evening" in session._instructions
+    assert "east-facing plots" in session._instructions
+    assert "speaking with Ravi Kumar" in session._greeting_request()["response"]["instructions"]
+
+    unnamed, *_ = make_session()
+    assert "never guess one" in unnamed._instructions
+    assert "# This call" not in unnamed._instructions
+
+
+def test_silent_line_gets_two_check_ins_and_then_a_polite_goodbye():
+    async def scenario():
+        import time
+
+        from app.streaming.realtime_session import MAX_SILENCE_CHECKS, SILENCE_CHECK_SECONDS
+
+        session, to_openai, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        now = time.monotonic()
+        assert session._silent_for(now + SILENCE_CHECK_SECONDS + 1) > SILENCE_CHECK_SECONDS
+
+        await session._on_event({"type": "input_audio_buffer.speech_started"})
+        assert session._silent_for(now + 60) == 0  # the caller is talking
+        await session._on_event({"type": "input_audio_buffer.speech_stopped"})
+
+        for _ in range(MAX_SILENCE_CHECKS):
+            await session._check_in()
+            assert "still there" in to_openai[-1]["response"]["instructions"]
+            assert session._silent_for(time.monotonic() + 60) == 0  # waiting for the agent to finish asking
+            await session._on_event({"type": "response.done", "response": {"status": "completed", "output": []}})
+        assert not session._giving_up
+
+        await session._check_in()
+        assert "say goodbye" in to_openai[-1]["response"]["instructions"]
+        await session._on_event({"type": "response.done", "response": {"status": "completed", "output": []}})
+        await asyncio.sleep(0.5)
+        assert ended and session.ended
+        await session.cancel()
+
+    asyncio.run(scenario())
+
+
+def test_telugu_natural_mix_uses_swap_list_and_examples():
+    session, *_ = make_session(language_style="natural_mix")
+    assert "టైమ్" in session._instructions
+    assert "రేట్" in session._instructions
+    assert "సైట్ విజిట్" in session._instructions
+    assert "కన్ఫర్మ్" in session._instructions
+    assert "ఒక్క నిమిషం టైమ్ ఉందా అండి" in session._instructions
+    assert "Never translate an English word into formal Telugu" in session._instructions
+
+
+def test_telugu_pure_style_avoids_english():
+    session, *_ = make_session(language_style="pure")
+    assert "pure, natural Telugu" in session._instructions
+    assert "టైమ్" not in session._instructions
+
+
+def test_telugu_english_heavy_style():
+    session, *_ = make_session(language_style="english_heavy")
+    assert "lean heavily on English" in session._instructions
+
+
+def test_hindi_natural_mix_uses_hindi_swap_list():
+    from app.streaming.realtime_session import RealtimeSession
+    session = RealtimeSession("key", "Book visits.", "hi", language_style="natural_mix")
+    assert "टाइम" in session._instructions
+    assert "रेट" in session._instructions
+    assert "Delhi" in session._instructions
+
+
+def test_english_language_ignores_language_style():
+    from app.streaming.realtime_session import RealtimeSession
+    session = RealtimeSession("key", "Book visits.", "en", language_style="natural_mix")
+    assert "Indian English" in session._instructions
+    assert "టైమ్" not in session._instructions
+
+
+def test_caller_speaking_again_resets_the_silence_checks():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await session._check_in()
+        await session._check_in()
+        await session._on_event({"type": "input_audio_buffer.committed", "item_id": "u1"})
+        assert session._silence_checks == 0
+        await session.cancel()
+        assert not ended
+
+    asyncio.run(scenario())

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -15,11 +16,13 @@ from app.services.call_engine import CallResult, finalize_call
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.protocol import parse_event
-from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, persona
+from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
 from app.streaming.session import StreamSession
 from datetime import datetime
 
 router = APIRouter()
+
+DEFAULT_TIMEZONE = "Asia/Kolkata"
 
 _call_modes: dict[int, str] = {}
 # Realtime sessions started while the phone rings, waiting for the audio stream to connect.
@@ -42,6 +45,9 @@ class CallContext:
     extras: dict
     mode: str
     greeting: str
+    caller_name: str = ""
+    caller_notes: str = ""
+    timezone: str = DEFAULT_TIMEZONE
 
 
 def _load_context(call_id: int) -> CallContext | None:
@@ -56,12 +62,31 @@ def _load_context(call_id: int) -> CallContext | None:
         all_extras = row.value if row else {}
         extras = all_extras.get(str(employee.id), {}) if isinstance(all_extras, dict) else {}
         fields = call.captured_fields or {}
+        lead = db.get(Lead, call.lead_id) if call.lead_id else None
+        org = db.get(AppSetting, f"t{employee.tenant_id}:org")
+        org_settings = org.value if org and isinstance(org.value, dict) else {}
         return CallContext(
             employee=employee,
             extras=extras,
             mode=_call_modes.get(call_id, fields.get("mode", "ai_agent")),
             greeting=fields.get("greeting", "") or extras.get("greeting", ""),
+            caller_name=str((lead.name if lead else "") or fields.get("name") or ""),
+            caller_notes=str(((lead.metadata_json or {}).get("notes") if lead else "") or fields.get("notes") or ""),
+            timezone=str(org_settings.get("timezone") or DEFAULT_TIMEZONE),
         )
+
+
+def _caller_line(caller_name: str) -> list[str]:
+    name = " ".join(caller_name.split())
+    return [f"You are speaking with {name}. Use their name respectfully now and then."] if name else []
+
+
+def _local_time(timezone: str) -> datetime:
+    """The time where the caller is, so the agent knows the day and whether it is morning or evening."""
+    try:
+        return datetime.now(ZoneInfo(timezone))
+    except Exception:
+        return datetime.now(ZoneInfo(DEFAULT_TIMEZONE))
 
 
 def _number(value, fallback: float) -> float:
@@ -76,12 +101,14 @@ def _persona_settings(ctx: CallContext) -> dict:
         "name": ctx.employee.name or "",
         "speaking_style": str(ctx.extras.get("speaking_style") or "humanized"),
         "creativity": _number(ctx.extras.get("temperature"), 0.85),
+        "language_style": str(ctx.extras.get("language_style") or "natural_mix"),
     }
 
 
 def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
     if ctx is None or not factory.use_realtime(ctx.employee.voice_tier.value, ctx.mode):
         return None
+    ps = _persona_settings(ctx)
     session = RealtimeSession(
         api_key=os.environ["OPENAI_API_KEY"],
         script=ctx.employee.script,
@@ -90,7 +117,10 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
         voice_gender=ctx.extras.get("voice_gender", "female"),
         model=MODEL_BY_TIER.get(ctx.employee.voice_tier.value, MODEL),
         speech_rate=_number(ctx.extras.get("speech_rate"), 1.0),
-        **_persona_settings(ctx),
+        caller_name=ctx.caller_name,
+        caller_notes=ctx.caller_notes,
+        local_time=_local_time(ctx.timezone),
+        **ps,
     )
     session.connect()
     return session
@@ -192,7 +222,11 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         stt=stt,
         llm=llm,
         tts=tts,
-        script=ctx.employee.script + "\n\n" + "\n".join(persona(**_persona_settings(ctx))),
+        script="\n\n".join(part for part in (
+            ctx.employee.script,
+            call_details(ctx.caller_name, ctx.caller_notes, _local_time(ctx.timezone)),
+            "\n".join(persona(**{k: v for k, v in _persona_settings(ctx).items() if k != "language_style"}) + _caller_line(ctx.caller_name)),
+        ) if part),
         language=ctx.employee.language,
         voice_tier=ctx.employee.voice_tier.value,
         stream_sid=stream_sid,

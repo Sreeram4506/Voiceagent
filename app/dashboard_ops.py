@@ -555,7 +555,7 @@ def list_employees(request: Request):
 
 
 _AGENT_EXTRA_KEYS = ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails",
-                     "voice_gender", "temperature", "speaking_style")
+                     "voice_gender", "temperature", "speaking_style", "language_style")
 
 
 def _clamp(value, low: float, high: float, fallback: float) -> float:
@@ -578,6 +578,8 @@ def _agent_extras(payload: dict) -> dict:
         out["voice_gender"] = "female"
     if "speaking_style" in out and out["speaking_style"] not in ("humanized", "professional", "casual", "energetic"):
         out["speaking_style"] = "humanized"
+    if "language_style" in out and out["language_style"] not in ("natural_mix", "pure", "english_heavy"):
+        out["language_style"] = "natural_mix"
     return out
 
 
@@ -645,6 +647,7 @@ def create_employee(request: Request, payload: dict):
             "voice_gender": "female",
             "temperature": 0.85,
             "speaking_style": "humanized",
+            "language_style": "natural_mix",
             **_agent_extras(payload),
         }
         _put_setting(db, extras_key, extras)
@@ -1116,12 +1119,29 @@ def generate_prompt(request: Request, payload: dict):
     }
     style_label = style_labels.get(style, style_labels["humanized"])
 
+    lang_style = str(payload.get("language_style") or "natural_mix").strip()
+    if language in ("te", "hi"):
+        mix_names = {"te": "Telugu-English (Tenglish)", "hi": "Hindi-English (Hinglish)"}
+        mix_guidance = (
+            f"- IMPORTANT: Write any example phrases in the prompt using natural {mix_names.get(language, lang_label)} code-mix: "
+            f"{lang_label} grammar and endings with everyday English words mixed in (like time, rate, plot, site visit, "
+            "confirm, booking, location, available, update, free). Never use formal/literary words where people say the English one."
+        )
+        if lang_style == "pure":
+            mix_guidance = f"- Write example phrases in pure, natural spoken {lang_label} — avoid English words where a common {lang_label} word exists."
+        elif lang_style == "english_heavy":
+            mix_guidance = f"- Write example phrases with heavy English mixing: {lang_label} structure and endings, but lean freely on English nouns and verbs."
+    else:
+        mix_guidance = ""
+
+    mix_line = f"{mix_guidance}\n" if mix_guidance else ""
     meta_prompt = (
         "You write system prompts for a voice AI agent that makes phone calls. "
         "Given a brief from the user, produce a complete system prompt the agent will follow on every call.\n\n"
         "Rules for the prompt you write:\n"
         f"- The agent's name is {agent_name}. It speaks {lang_label}.\n"
         f"- Tone: {style_label}.\n"
+        f"{mix_line}"
         "- Include: who the agent is, what company/product it represents (from the brief), "
         "the goal of each call (book appointment, collect info, etc.), how to handle objections, "
         "what information to gather from the caller, and when to end the call.\n"
@@ -1201,7 +1221,7 @@ def _openai_reply(api_key: str, message: str, prior: list[dict[str, str]]) -> st
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
-    messages = [{"role": "system", "content": "You are Suma, a concise Telugu banking voice agent. Max 25 words. Use honorifics గారు/అండి."}]
+    messages = [{"role": "system", "content": "You are Suma, a concise Telugu voice agent. Max 25 words. Use honorifics గారు/అండి. Speak natural Tenglish: Telugu grammar with everyday English words mixed in (టైమ్, రేట్, ప్లాట్, సైట్ విజిట్, బుక్, కన్ఫర్మ్, కాల్). Never use formal Telugu where people say the English word."}]
     for t in prior[-8:]:
         messages.append({"role": "user" if t["role"] == "caller" else "assistant", "content": t["text"]})
     messages.append({"role": "user", "content": message})

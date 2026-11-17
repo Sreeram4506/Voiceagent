@@ -58,7 +58,7 @@ def test_saved_voice_settings_reach_the_call(client):
     assert ctx.extras["voice_gender"] == "male"
     assert ctx.extras["speech_rate"] == 1.2
     assert ctx.greeting == "నమస్కారం"
-    assert _persona_settings(ctx) == {"name": "Priya", "speaking_style": "professional", "creativity": 0.4}
+    assert _persona_settings(ctx) == {"name": "Priya", "speaking_style": "professional", "creativity": 0.4, "language_style": "natural_mix"}
 
 
 def test_settings_shape_the_realtime_session():
@@ -85,3 +85,50 @@ def test_fallback_voice_accepts_the_numeric_speech_rate():
 
     tts = factory._build_tts(Agent(), openai_key=None, extras={"speech_rate": 1.05, "voice_gender": "male"})
     assert tts._rate == "+5%" and tts._gender == "male"
+
+
+def test_lead_name_and_notes_reach_the_call(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={"name": "Suma"}).json()["id"]
+    with SessionLocal() as db:
+        from app.models import AIEmployee, Lead
+
+        emp = db.get(AIEmployee, eid)
+        lead = Lead(tenant_id=emp.tenant_id, employee_id=eid, phone_e164="+919999900001", name="Ravi Kumar",
+                    metadata_json={"notes": "Prefers evening calls"})
+        db.add(lead)
+        db.flush()
+        call = Call(tenant_id=emp.tenant_id, employee_id=eid, lead_id=lead.id, status=CallStatus.CONNECTED,
+                    started_at=datetime.utcnow())
+        db.add(call)
+        db.commit()
+        call_id = call.id
+
+    ctx = _load_context(call_id)
+    assert ctx.caller_name == "Ravi Kumar"
+    assert ctx.caller_notes == "Prefers evening calls"
+    assert ctx.timezone == "Asia/Kolkata"
+
+
+def test_language_style_saved_and_reaches_call(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={
+        "name": "Suma", "language_style": "english_heavy",
+    }).json()["id"]
+    got = employee(client, eid)
+    assert got["language_style"] == "english_heavy"
+
+    client.patch(f"/dashboard/api/employees/{eid}", json={"language_style": "pure"})
+    got = employee(client, eid)
+    assert got["language_style"] == "pure"
+
+    with SessionLocal() as db:
+        from app.models import AIEmployee
+        emp = db.get(AIEmployee, eid)
+        call = Call(tenant_id=emp.tenant_id, employee_id=eid, status=CallStatus.CONNECTED, started_at=datetime.utcnow())
+        db.add(call)
+        db.commit()
+        call_id = call.id
+
+    ctx = _load_context(call_id)
+    assert _persona_settings(ctx)["language_style"] == "pure"
