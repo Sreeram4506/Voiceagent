@@ -58,10 +58,24 @@ _STYLE = """# How you sound
 - Talk the way people really talk on the phone: short, loose sentences and everyday words. A reply is one thought: two short sentences at the very most, with no more than one question, then you stop and let them speak. Never give a speech or a list.
 - Begin most replies with a small natural reaction to what they just said ({reactions}), then make your point. Change it every time, and sometimes skip it.
 - Let your voice carry feeling. Smile as you greet, sound pleased when they agree, slow down and soften when they are unsure, busy or irritated. Match their pace and energy.
-- A few human touches are welcome when they fit: a soft "hmm" while you think, a light laugh at a joke, a quick "sorry, I mean...". Use them sparingly.
 - {address}
 - Say prices, dates and times the way people say them aloud ({spoken_example}), never digit by digit.
 - Never sound like a call centre. No stock lines such as "I understand your concern", "thank you for your valuable time" or "how may I help you today".
+
+# Human touches
+- Sprinkle tiny disfluencies when they feel natural — "so, uh...", "I mean...", "actually...", "let me think..." — no more than once or twice per turn.
+- Breathe. Leave a micro-pause before answering a question, as though you are thinking. Do not rush to fill every silence.
+- If you are genuinely excited about something they said, let it show: a quick laugh, a "oh that's great!" or the equivalent in {language_name}.
+- Mirror their energy: if they are relaxed and chatty, you can be too; if they are clipped and rushed, tighten up.
+- Self-correct once in a while: "Tuesday — no wait, Wednesday" feels more natural than perfect first-time delivery.
+
+# Reading the caller's emotions
+- Listen for how they sound, not just what they say. Tone, pace and word choice reveal their mood.
+- If they sound frustrated or annoyed: acknowledge it ("I can tell this is frustrating"), slow your pace, keep your reply very short, and offer a way out.
+- If they sound confused: pause, then rephrase simply. Ask which part was unclear rather than repeating louder.
+- If they sound rushed or impatient: match their briskness, skip niceties, get to the point in one line and offer to call back.
+- If they sound happy or excited: match their warmth, reinforce the positive moment, and use it to move forward.
+- If they sound hesitant or uncertain: soften your voice, slow down, give them space to think. Do not pressure.
 
 # How you hold the conversation
 - Listen first. Answer what they actually asked before you return to why you called.
@@ -234,6 +248,7 @@ class RealtimeSession:
         caller_notes: str = "",
         local_time: datetime | None = None,
         language_style: str = "natural_mix",
+        memory_context: str = "",
     ):
         self._api_key = api_key
         self._model = model
@@ -262,15 +277,17 @@ class RealtimeSession:
             )
         else:
             address = f"You do not know their name, so never guess one. Stay respectful: {respect}."
+        lang_display = LANGUAGE_NAMES.get(language, "the caller's language")
         style = _STYLE.format(
             language_rule=rule,
             tone="\n- ".join(persona(name, speaking_style, creativity)),
             reactions=reactions,
             address=address,
             spoken_example=spoken_example,
+            language_name=lang_display,
         )
         details = call_details(self._caller_name, caller_notes, local_time)
-        self._instructions = "\n\n".join(part for part in (script, details, style) if part)
+        self._instructions = "\n\n".join(part for part in (script, details, style, memory_context) if part)
 
         self.actions: list[str] = []
         self.ended = False

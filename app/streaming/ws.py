@@ -16,6 +16,7 @@ from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
+from app.streaming.memory import load_memory, memory_to_prompt, update_memory
 from app.streaming.protocol import parse_event
 from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
 from app.streaming.recorded import RecordedAudioSession, _to_pcm_8k
@@ -27,6 +28,7 @@ router = APIRouter()
 DEFAULT_TIMEZONE = "Asia/Kolkata"
 
 _call_modes: dict[int, str] = {}
+_call_lead_ids: dict[int, int | None] = {}
 # Realtime sessions started while the phone rings, waiting for the audio stream to connect.
 _prepared: dict[int, asyncio.Task] = {}
 PREPARED_TTL_SECONDS = 45  # ring timeout is 30s
@@ -51,6 +53,8 @@ class CallContext:
     caller_notes: str = ""
     timezone: str = DEFAULT_TIMEZONE
     agent_mode: str = "ai_agent"
+    lead_id: int | None = None
+    memory_context: str = ""
 
 
 def _load_context(call_id: int) -> CallContext | None:
@@ -68,6 +72,8 @@ def _load_context(call_id: int) -> CallContext | None:
         lead = db.get(Lead, call.lead_id) if call.lead_id else None
         org = db.get(AppSetting, f"t{employee.tenant_id}:org")
         org_settings = org.value if org and isinstance(org.value, dict) else {}
+        lead_id = lead.id if lead else None
+        mem = load_memory(lead_id)
         return CallContext(
             employee=employee,
             extras=extras,
@@ -77,6 +83,8 @@ def _load_context(call_id: int) -> CallContext | None:
             caller_notes=str(((lead.metadata_json or {}).get("notes") if lead else "") or fields.get("notes") or ""),
             timezone=str(org_settings.get("timezone") or DEFAULT_TIMEZONE),
             agent_mode=str(extras.get("agent_mode") or "ai_agent"),
+            lead_id=lead_id,
+            memory_context=memory_to_prompt(mem),
         )
 
 
@@ -124,6 +132,7 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
         caller_name=ctx.caller_name,
         caller_notes=ctx.caller_notes,
         local_time=_local_time(ctx.timezone),
+        memory_context=ctx.memory_context,
         **ps,
     )
     session.connect()
@@ -137,6 +146,8 @@ def prepare_call(call_id: int) -> None:
 
     async def prepare() -> RealtimeSession | dict | None:
         ctx = await asyncio.to_thread(_load_context, call_id)
+        if ctx is not None:
+            _call_lead_ids[call_id] = ctx.lead_id
         if ctx is not None and ctx.agent_mode == "recorded_audio":
             audio = ctx.extras.get("audio_greeting")
             if audio and audio.get("data"):
@@ -200,6 +211,7 @@ async def media_stream(websocket: WebSocket, call_id: int, token: str = ""):
         if session is not None:
             await session.cancel()
         _persist(call_id, session)
+        _call_lead_ids.pop(call_id, None)
 
 
 async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> StreamSession | RealtimeSession | RecordedAudioSession:
@@ -236,6 +248,8 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
     ctx: CallContext | None = None
     if realtime is None:
         ctx = _load_context(call_id)
+        if ctx is not None:
+            _call_lead_ids[call_id] = ctx.lead_id
         if ctx is not None and ctx.agent_mode == "recorded_audio":
             audio = ctx.extras.get("audio_greeting")
             if audio and audio.get("data"):
@@ -274,6 +288,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
             ctx.employee.script,
             call_details(ctx.caller_name, ctx.caller_notes, _local_time(ctx.timezone)),
             "\n".join(persona(**{k: v for k, v in _persona_settings(ctx).items() if k != "language_style"}) + _caller_line(ctx.caller_name)),
+            ctx.memory_context,
         ) if part),
         language=ctx.employee.language,
         voice_tier=ctx.employee.voice_tier.value,
@@ -289,7 +304,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
 
 
 def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAudioSession | None) -> None:
-    """Write transcript, outcome, and billing once the stream closes."""
+    """Write transcript, outcome, billing, and conversation memory once the stream closes."""
     if session is not None and session.persisted:
         return
     with SessionLocal() as db:
@@ -316,3 +331,11 @@ def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAu
         db.commit()
         if session is not None:
             session.persisted = True
+
+    # Update per-lead conversation memory (outside the main transaction)
+    lead_id = _call_lead_ids.pop(call_id, None)
+    if session is not None and lead_id and session.turns:
+        try:
+            update_memory(lead_id, session.turns, session.outcome())
+        except Exception as e:
+            print(f"[WS] memory update error: {e}")
