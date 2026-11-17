@@ -7,9 +7,11 @@ import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+import base64
 import io
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import extract, func, text
 
 from app.db import SessionLocal
@@ -537,6 +539,10 @@ def list_employees(request: Request):
         out = []
         for e in rows:
             extra = extras.get(str(e.id), {})
+            audio = extra.pop("audio_greeting", None)
+            audio_meta = None
+            if audio and audio.get("data"):
+                audio_meta = {"filename": audio.get("filename", ""), "size": audio.get("size", 0), "content_type": audio.get("content_type", "")}
             out.append({
                 "id": e.id,
                 "name": e.name,
@@ -550,6 +556,7 @@ def list_employees(request: Request):
                 "window_end": e.window_end.strftime("%H:%M") if e.window_end else "20:00",
                 "max_attempts": e.max_attempts,
                 **extra,
+                "audio_greeting": audio_meta,
             })
         return out
 
@@ -690,6 +697,82 @@ def patch_employee(request: Request, employee_id: int, payload: dict):
         _log(db, tid, "agent.updated", e.name)
         db.commit()
         return {"ok": True}
+
+
+_MAX_AUDIO_BYTES = 5 * 1024 * 1024  # 5 MB
+_AUDIO_TYPES = {"audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/x-wav"}
+_EXT_TO_CT = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".webm": "audio/webm",
+              ".m4a": "audio/x-m4a", ".aac": "audio/aac", ".mp4": "audio/mp4"}
+
+
+@ops.post("/api/employees/{employee_id}/audio")
+async def upload_agent_audio(request: Request, employee_id: int, file: UploadFile = File(...)):
+    tid = _require_tid(request)
+    data = await file.read()
+    if len(data) > _MAX_AUDIO_BYTES:
+        return {"error": "Audio file too large (max 5 MB)"}
+    ct = file.content_type or "audio/mpeg"
+    if ct not in _AUDIO_TYPES:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        ct = _EXT_TO_CT.get(ext, ct)
+    if ct not in _AUDIO_TYPES:
+        return {"error": f"Unsupported audio format: {ct}"}
+    with SessionLocal() as db:
+        e = db.query(AIEmployee).filter(AIEmployee.id == employee_id, AIEmployee.tenant_id == tid).first()
+        if not e:
+            return {"error": "Agent not found"}
+        extras_key = _tenant_setting_key(tid, "employee_extras")
+        extras = _setting(db, extras_key, {})
+        agent_extras = extras.get(str(e.id), {})
+        agent_extras["audio_greeting"] = {
+            "filename": file.filename or "greeting.mp3",
+            "content_type": ct,
+            "data": base64.b64encode(data).decode(),
+            "size": len(data),
+        }
+        extras[str(e.id)] = agent_extras
+        _put_setting(db, extras_key, extras)
+        _log(db, tid, "agent.audio_uploaded", f"{e.name}: {file.filename}")
+        db.commit()
+    return {"ok": True, "filename": file.filename, "size": len(data)}
+
+
+@ops.get("/api/employees/{employee_id}/audio")
+def get_agent_audio(request: Request, employee_id: int):
+    tid = _require_tid(request)
+    with SessionLocal() as db:
+        e = db.query(AIEmployee).filter(AIEmployee.id == employee_id, AIEmployee.tenant_id == tid).first()
+        if not e:
+            return {"error": "Agent not found"}
+        extras_key = _tenant_setting_key(tid, "employee_extras")
+        extras = _setting(db, extras_key, {})
+        agent_extras = extras.get(str(e.id), {})
+        audio = agent_extras.get("audio_greeting")
+        if not audio or not audio.get("data"):
+            return Response(status_code=404)
+        return Response(
+            content=base64.b64decode(audio["data"]),
+            media_type=audio.get("content_type", "audio/mpeg"),
+            headers={"Content-Disposition": f'inline; filename="{audio.get("filename", "greeting.mp3")}"'},
+        )
+
+
+@ops.delete("/api/employees/{employee_id}/audio")
+def delete_agent_audio(request: Request, employee_id: int):
+    tid = _require_tid(request)
+    with SessionLocal() as db:
+        e = db.query(AIEmployee).filter(AIEmployee.id == employee_id, AIEmployee.tenant_id == tid).first()
+        if not e:
+            return {"error": "Agent not found"}
+        extras_key = _tenant_setting_key(tid, "employee_extras")
+        extras = _setting(db, extras_key, {})
+        agent_extras = extras.get(str(e.id), {})
+        agent_extras.pop("audio_greeting", None)
+        extras[str(e.id)] = agent_extras
+        _put_setting(db, extras_key, extras)
+        _log(db, tid, "agent.audio_deleted", e.name)
+        db.commit()
+    return {"ok": True}
 
 
 @ops.get("/api/live-calls")

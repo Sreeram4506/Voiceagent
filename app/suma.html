@@ -1096,6 +1096,7 @@ function _renderAgentStudio(agents) {
                   ['Lang Mix', _langStyleLabel(a.language_style)],
                   ['Creativity', _creativityLabel(a.temperature)],
                   ['Greeting', a.greeting ? a.greeting : 'Auto-generated'],
+                  ['Audio', a.audio_greeting ? a.audio_greeting.filename : 'None'],
                 ].map(([label, val]) => `
                   <div class="p-2.5 bg-surface-container-low rounded-lg min-w-0">
                     <div class="text-[10px] text-on-surface-variant">${label}</div>
@@ -1197,6 +1198,7 @@ async function resetPlayground() {
 }
 
 function showCreateAgent(editEmp) {
+  _pendingAudioFile = null;
   const isEdit = !!editEmp;
   const e = editEmp || {};
   const genderVal = e.voice_gender || 'female';
@@ -1365,6 +1367,45 @@ function showCreateAgent(editEmp) {
           <!-- Greeting -->
           <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Opening Greeting</label>
           <input class="input mb-3" id="caGreeting" value="${esc(e.greeting||'')}" placeholder="Leave blank for auto-generated greeting"/>
+
+          <!-- Audio Greeting Upload -->
+          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Audio Greeting (optional)</label>
+          <div id="caAudioSection" class="mb-3">
+            ${e.audio_greeting ? `
+              <div id="caAudioExisting" class="flex items-center gap-3 p-3 rounded-xl border border-primary/30 bg-primary-container/30">
+                <span class="material-symbols-outlined text-primary text-[20px]">audio_file</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[12px] font-semibold text-on-surface truncate">${esc(e.audio_greeting.filename)}</div>
+                  <div class="text-[10px] text-on-surface-variant">${(e.audio_greeting.size/1024).toFixed(1)} KB</div>
+                </div>
+                <audio id="caAudioPlayer" src="/dashboard/api/employees/${e.id}/audio" class="h-8" style="max-width:160px" controls preload="none"></audio>
+                <button type="button" onclick="removeAgentAudio(${e.id})" class="p-1.5 rounded-lg hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors" title="Remove audio">
+                  <span class="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+              </div>
+            ` : `
+              <div id="caAudioExisting" style="display:none"></div>
+            `}
+            <label id="caAudioUploadBtn" class="flex items-center gap-3 p-3 rounded-xl border border-dashed border-surface-container-high hover:border-primary/50 cursor-pointer transition-colors ${e.audio_greeting ? 'mt-2' : ''}" style="${e.audio_greeting ? 'display:none' : ''}">
+              <span class="material-symbols-outlined text-on-surface-variant text-[20px]">upload_file</span>
+              <div>
+                <div class="text-[12px] font-semibold text-on-surface">Upload audio file</div>
+                <div class="text-[10px] text-on-surface-variant">MP3, WAV, OGG, M4A — max 5 MB</div>
+              </div>
+              <input type="file" id="caAudioFile" accept="audio/*" class="hidden" onchange="previewAgentAudio(this)"/>
+            </label>
+            <div id="caAudioPreview" style="display:none" class="flex items-center gap-3 p-3 rounded-xl border border-tertiary/30 bg-tertiary-container/20 mt-2">
+              <span class="material-symbols-outlined text-tertiary text-[20px]">headphones</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[12px] font-semibold text-on-surface truncate" id="caAudioPreviewName"></div>
+                <div class="text-[10px] text-on-surface-variant" id="caAudioPreviewSize"></div>
+              </div>
+              <audio id="caAudioPreviewPlayer" class="h-8" style="max-width:160px" controls></audio>
+              <button type="button" onclick="clearAudioPreview()" class="p-1.5 rounded-lg hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors" title="Remove">
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Section: System Prompt -->
@@ -1492,17 +1533,85 @@ function _refreshAgentViews() {
   return route() === 'agent-studio' ? renderAgentStudio() : route() === 'employees' ? renderEmployees() : null;
 }
 
+let _pendingAudioFile = null;
+
+function previewAgentAudio(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast('Audio file too large (max 5 MB)', false); input.value = ''; return; }
+  _pendingAudioFile = file;
+  const preview = $('caAudioPreview');
+  $('caAudioPreviewName').textContent = file.name;
+  $('caAudioPreviewSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+  $('caAudioPreviewPlayer').src = URL.createObjectURL(file);
+  preview.style.display = 'flex';
+  const uploadBtn = $('caAudioUploadBtn');
+  if (uploadBtn) uploadBtn.style.display = 'none';
+}
+
+function clearAudioPreview() {
+  _pendingAudioFile = null;
+  const preview = $('caAudioPreview');
+  if (preview) preview.style.display = 'none';
+  const player = $('caAudioPreviewPlayer');
+  if (player) { player.pause(); player.src = ''; }
+  const fileInput = $('caAudioFile');
+  if (fileInput) fileInput.value = '';
+  const uploadBtn = $('caAudioUploadBtn');
+  const existing = $('caAudioExisting');
+  if (uploadBtn && (!existing || existing.style.display === 'none' || !existing.innerHTML.trim())) uploadBtn.style.display = 'flex';
+}
+
+async function uploadAgentAudio(empId) {
+  if (!_pendingAudioFile) return;
+  const fd = new FormData();
+  fd.append('file', _pendingAudioFile);
+  const r = await fetch('/dashboard/api/employees/' + empId + '/audio', {
+    method: 'POST',
+    body: fd,
+    credentials: 'same-origin',
+  });
+  const data = await r.json();
+  if (data.ok) {
+    _pendingAudioFile = null;
+    return true;
+  }
+  toast('Audio upload failed: ' + (data.error || 'unknown error'), false);
+  return false;
+}
+
+async function removeAgentAudio(empId) {
+  const r = await api('/api/employees/' + empId + '/audio', { method: 'DELETE' });
+  if (r.ok) {
+    toast('Audio removed');
+    const existing = $('caAudioExisting');
+    if (existing) { existing.style.display = 'none'; existing.innerHTML = ''; }
+    const uploadBtn = $('caAudioUploadBtn');
+    if (uploadBtn) uploadBtn.style.display = 'flex';
+  } else {
+    toast('Failed to remove audio', false);
+  }
+}
+
 async function createAgent() {
   const payload = _getAgentFormData();
   const r = await api('/api/employees', {method:'POST', body:JSON.stringify(payload)});
-  if(r.id) { toast('Agent created!'); hideModal(); await _refreshAgentViews(); }
+  if(r.id) {
+    if (_pendingAudioFile) await uploadAgentAudio(r.id);
+    _pendingAudioFile = null;
+    toast('Agent created!'); hideModal(); await _refreshAgentViews();
+  }
   else toast('Error: '+(r.error||'failed'), false);
 }
 
 async function updateAgent(id) {
   const payload = _getAgentFormData();
   const r = await api('/api/employees/'+id, {method:'PATCH', body:JSON.stringify(payload)});
-  if(r.ok) { toast('Agent updated!'); hideModal(); await _refreshAgentViews(); }
+  if(r.ok) {
+    if (_pendingAudioFile) await uploadAgentAudio(id);
+    _pendingAudioFile = null;
+    toast('Agent updated!'); hideModal(); await _refreshAgentViews();
+  }
   else toast('Error: '+(r.error||'failed'), false);
 }
 
