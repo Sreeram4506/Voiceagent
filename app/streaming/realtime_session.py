@@ -429,12 +429,16 @@ class RealtimeSession:
                 f'in a warm voice, without adding anything else: "{self._greeting}"'
             )
         else:
-            check = f"check that you are speaking with {self._caller_name}, " if self._caller_name else ""
-            opening = (
-                f"The person has just picked up. Say hello the way a real caller would, {check}"
-                "say your name and where you are calling from, and ask if they have a minute, "
-                "all in one short breath. Then stop and wait for their answer before explaining anything."
-            )
+            if self._caller_name:
+                opening = (
+                    f"The person has just picked up. In one short line: say hello, confirm you are speaking "
+                    f"with {self._caller_name}, and say your name. Then stop and wait for their reply."
+                )
+            else:
+                opening = (
+                    "The person has just picked up. In one short line: say hello, say your name, "
+                    "and ask if they have a minute. Then stop and wait for their reply."
+                )
         return {
             "type": "response.create",
             "response": {"instructions": f"{self._instructions}\n\n{opening}", "tool_choice": "none"},

@@ -1524,7 +1524,7 @@ async function _testCallFromModal(empId) {
   btn.disabled = true;
   btn.innerHTML = '<span class="material-symbols-outlined icon-sm animate-spin">progress_activity</span> Calling…';
   const r = await api('/api/employees/'+empId+'/single-call', {
-    method:'POST', body:JSON.stringify({phone:'+918977012479', name:'Test Call', mode:'ai_agent'})
+    method:'POST', body:JSON.stringify({phone:'+918977012479', mode:'ai_agent'})
   });
   if(r.ok||r.accepted) { toast('Test call placed to +91 89770 12479'); btn.innerHTML='<span class="material-symbols-outlined icon-sm">call</span> Test Call'; btn.disabled=false; }
   else { toast('Call failed: '+(r.error||'unknown'), false); btn.innerHTML='<span class="material-symbols-outlined icon-sm">call</span> Test Call'; btn.disabled=false; }
@@ -1534,7 +1534,7 @@ async function _quickTestCall(empId, btnEl) {
   btnEl.disabled = true;
   btnEl.innerHTML = '<span class="material-symbols-outlined icon-sm animate-spin">progress_activity</span> Calling…';
   const r = await api('/api/employees/'+empId+'/single-call', {
-    method:'POST', body:JSON.stringify({phone:'+918977012479', name:'Test Call', mode:'ai_agent'})
+    method:'POST', body:JSON.stringify({phone:'+918977012479', mode:'ai_agent'})
   });
   if(r.ok||r.accepted) { toast('Test call placed to +91 89770 12479'); }
   else { toast('Call failed: '+(r.error||'unknown'), false); }
