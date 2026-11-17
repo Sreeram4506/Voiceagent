@@ -145,7 +145,7 @@ class StreamSession:
         print(f"[Filler] {len(self._filler_cache)} phrases cached")
 
     async def _play_filler(self) -> None:
-        """Play a short backchannel sound to show the agent is listening while STT/LLM run."""
+        """Play backchannel sounds in rotation until cancelled by real TTS output."""
         if not self._filler_cache:
             return
         try:
@@ -153,6 +153,12 @@ class StreamSession:
             self._filler_idx += 1
             await self._safe_send(media_message(self.stream_sid, pcm))
             await asyncio.sleep(len(pcm) / (8000 * 2))
+            await asyncio.sleep(0.4)
+            if len(self._filler_cache) > 1:
+                pcm2 = self._filler_cache[self._filler_idx % len(self._filler_cache)]
+                self._filler_idx += 1
+                await self._safe_send(media_message(self.stream_sid, pcm2))
+                await asyncio.sleep(len(pcm2) / (8000 * 2))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -233,6 +239,8 @@ class StreamSession:
         full_text = ""
 
         _SENTENCE_END = frozenset('.?!।')
+        max_sentences = 1 if is_opening else 2
+        sentence_count = 0
         async for item in self.llm.stream_reply(script_for_turn, self.history, caller_text or ""):
             if isinstance(item, ToolRequest):
                 self.actions.append(item.name)
@@ -240,8 +248,10 @@ class StreamSession:
                     end_requested = True
                 continue
             full_text += item
-            if len(full_text) >= 12 and full_text[-1] in _SENTENCE_END:
-                break
+            if len(full_text) >= 8 and full_text[-1] in _SENTENCE_END:
+                sentence_count += 1
+                if sentence_count >= max_sentences:
+                    break
 
         reply = full_text.strip()
         print(f"[RESPOND] LLM reply ready at {_t.time()-t0:.2f}s: {len(reply)} chars")

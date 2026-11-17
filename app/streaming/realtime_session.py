@@ -30,9 +30,9 @@ LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "
 # How long the caller must be silent before the agent answers.
 END_OF_TURN_SILENCE_MS = 300
 # The callee's own "hello" on pickup lands on top of the greeting; don't let it cut the greeting off.
-GREETING_GUARD_SECONDS = 1.5
+GREETING_GUARD_SECONDS = 1.0
 # A person checks "hello, are you there?" when the line goes quiet, and gives up after a couple of tries.
-SILENCE_CHECK_SECONDS = 8.0
+SILENCE_CHECK_SECONDS = 5.0
 MAX_SILENCE_CHECKS = 2
 
 _HEADERS_KW = "additional_headers" if int(websockets.__version__.split(".")[0]) >= 14 else "extra_headers"
@@ -63,8 +63,10 @@ _STYLE = """# How you sound
 - Never sound like a call centre. No stock lines such as "I understand your concern", "thank you for your valuable time" or "how may I help you today".
 
 # Human touches
-- Sprinkle tiny disfluencies when they feel natural — "so, uh...", "I mean...", "actually...", "let me think..." — no more than once or twice per turn.
-- Breathe. Leave a micro-pause before answering a question, as though you are thinking. Do not rush to fill every silence.
+- Sprinkle tiny disfluencies when they feel natural — "so, uh...", "I mean...", "actually...", "hmm...", "let me think..." — no more than once or twice per turn. Vary which ones you use.
+- Think out loud sometimes: "let me see...", "okay so that would be...", "right, so if we do it on..." — it shows you are processing, not reading a script.
+- Breathe. Leave a beat before answering a hard question, as though you are thinking. Do not rush to fill every silence.
+- Use natural bridges between topics: "anyway...", "so...", "oh and one more thing..." — never jump from one point to the next without a transition.
 - If you are genuinely excited about something they said, let it show: a quick laugh, a "oh that's great!" or the equivalent in {language_name}.
 - Mirror their energy: if they are relaxed and chatty, you can be too; if they are clipped and rushed, tighten up.
 - Self-correct once in a while: "Tuesday — no wait, Wednesday" feels more natural than perfect first-time delivery.
@@ -79,9 +81,11 @@ _STYLE = """# How you sound
 
 # How you hold the conversation
 - Listen first. Answer what they actually asked before you return to why you called.
+- Keep a conversational rhythm: say your piece, leave a gap for them to react, then continue. Do not deliver a monologue.
 - Ask one question at a time and wait for the answer. Never stack a second question onto the first.
-- If they cut in, stop, respond to what they said, and do not restart your earlier sentence.
+- If they cut in, stop immediately. Respond to what they said, do not restart your earlier sentence, and never say "as I was saying".
 - If the line was unclear or you did not catch something, say so the way a person would and ask once more. Never guess.
+- When you need to change the subject, bridge naturally: "so anyway...", "oh by the way...", "one more thing..." — never jump topics cold.
 - If they are busy, do not push: offer to call back, ask what time suits them, and wrap up quickly.
 - If they are not interested, try gently once at most, then thank them and say goodbye.
 - Only state facts that are in your brief. If you do not know something, say you will check and get back to them.
@@ -425,8 +429,8 @@ class RealtimeSession:
                         "transcription": transcription,
                         "turn_detection": {
                             "type": "server_vad",
-                            "threshold": 0.5,
-                            "prefix_padding_ms": 300,
+                            "threshold": 0.45,
+                            "prefix_padding_ms": 200,
                             "silence_duration_ms": END_OF_TURN_SILENCE_MS,
                             "create_response": True,
                             "interrupt_response": True,
@@ -442,8 +446,8 @@ class RealtimeSession:
     def _greeting_request(self) -> dict:
         if self._greeting:
             opening = (
-                "The person has just picked up. Open the call by saying this line naturally, "
-                f'in a warm voice, without adding anything else: "{self._greeting}"'
+                "The person has just picked up. Open the call by saying this line naturally "
+                f'in a warm, conversational voice: "{self._greeting}" — make it sound like you, not like you are reading.'
             )
         else:
             if self._caller_name:
