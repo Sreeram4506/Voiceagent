@@ -1339,16 +1339,16 @@ function showCreateAgent(editEmp) {
               {val:'pure', icon:'translate', label:'Pure', desc:'Minimal English'},
               {val:'natural_mix', icon:'mix_cross', label:'Natural Mix', desc:'Telugu + English words'},
               {val:'english_heavy', icon:'language', label:'English Heavy', desc:'More English mixing'},
-            ].map(s=>\`
-              <button type="button" data-langstyle="\${s.val}" onclick="document.querySelectorAll('#caLangStyleWrap button').forEach(b=>{b.classList.remove('border-primary','bg-primary-container','shadow-sm');b.classList.add('border-surface-container-high')});this.classList.remove('border-surface-container-high');this.classList.add('border-primary','bg-primary-container','shadow-sm')"
-                class="p-2.5 rounded-xl border text-left transition-all cursor-pointer \${langStyleVal===s.val?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
+            ].map(s=>`
+              <button type="button" data-langstyle="${s.val}" onclick="document.querySelectorAll('#caLangStyleWrap button').forEach(b=>{b.classList.remove('border-primary','bg-primary-container','shadow-sm');b.classList.add('border-surface-container-high')});this.classList.remove('border-surface-container-high');this.classList.add('border-primary','bg-primary-container','shadow-sm')"
+                class="p-2.5 rounded-xl border text-left transition-all cursor-pointer ${langStyleVal===s.val?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
                 <div class="flex flex-col items-center gap-1 text-center">
-                  <span class="material-symbols-outlined text-[16px] \${langStyleVal===s.val?'text-primary':'text-on-surface-variant'}">\${s.icon}</span>
-                  <div class="text-[11px] font-semibold text-on-surface">\${s.label}</div>
-                  <div class="text-[9px] text-on-surface-variant">\${s.desc}</div>
+                  <span class="material-symbols-outlined text-[16px] ${langStyleVal===s.val?'text-primary':'text-on-surface-variant'}">${s.icon}</span>
+                  <div class="text-[11px] font-semibold text-on-surface">${s.label}</div>
+                  <div class="text-[9px] text-on-surface-variant">${s.desc}</div>
                 </div>
               </button>
-            \`).join('')}
+            `).join('')}
           </div>
 
           <!-- Temperature -->
