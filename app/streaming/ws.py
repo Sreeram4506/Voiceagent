@@ -17,6 +17,7 @@ from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.protocol import parse_event
 from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
+from app.streaming.recorded import RecordedAudioSession
 from app.streaming.session import StreamSession
 from datetime import datetime
 
@@ -48,6 +49,7 @@ class CallContext:
     caller_name: str = ""
     caller_notes: str = ""
     timezone: str = DEFAULT_TIMEZONE
+    agent_mode: str = "ai_agent"
 
 
 def _load_context(call_id: int) -> CallContext | None:
@@ -73,6 +75,7 @@ def _load_context(call_id: int) -> CallContext | None:
             caller_name=str((lead.name if lead else "") or fields.get("name") or ""),
             caller_notes=str(((lead.metadata_json or {}).get("notes") if lead else "") or fields.get("notes") or ""),
             timezone=str(org_settings.get("timezone") or DEFAULT_TIMEZONE),
+            agent_mode=str(extras.get("agent_mode") or "ai_agent"),
         )
 
 
@@ -166,7 +169,7 @@ async def media_stream(websocket: WebSocket, call_id: int, token: str = ""):
         return
     await websocket.accept()
 
-    session: StreamSession | RealtimeSession | None = None
+    session: StreamSession | RealtimeSession | RecordedAudioSession | None = None
     try:
         while True:
             raw = await websocket.receive_text()
@@ -189,8 +192,8 @@ async def media_stream(websocket: WebSocket, call_id: int, token: str = ""):
         _persist(call_id, session)
 
 
-async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> StreamSession | RealtimeSession:
-    holder: dict[str, StreamSession | RealtimeSession] = {}
+async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> StreamSession | RealtimeSession | RecordedAudioSession:
+    holder: dict[str, StreamSession | RealtimeSession | RecordedAudioSession] = {}
 
     async def send(message: str) -> None:
         await websocket.send_text(message)
@@ -199,11 +202,28 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         _persist(call_id, holder["session"])
         await websocket.close()
 
-    ctx: CallContext | None = None
+    ctx: CallContext | None = _load_context(call_id)
+
+    if ctx is not None and ctx.agent_mode == "recorded_audio":
+        audio = ctx.extras.get("audio_greeting")
+        if audio and audio.get("data"):
+            print(f"[WS] recorded_audio mode — playing {audio.get('filename', 'audio')}")
+            session = RecordedAudioSession(
+                audio_b64=audio["data"],
+                content_type=audio.get("content_type", "audio/mpeg"),
+                filename=audio.get("filename", "greeting.mp3"),
+                stream_sid=stream_sid,
+                send=send,
+                on_end=end,
+            )
+            holder["session"] = session
+            await session.start()
+            return session
+        print("[WS] recorded_audio mode but no audio file — falling back to AI")
+
     prepared = _prepared.pop(call_id, None)
     realtime = await prepared if prepared is not None else None
     if realtime is None:
-        ctx = _load_context(call_id)
         realtime = _start_realtime(ctx)
 
     if realtime is not None:
@@ -240,7 +260,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
     return session
 
 
-def _persist(call_id: int, session: StreamSession | RealtimeSession | None) -> None:
+def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAudioSession | None) -> None:
     """Write transcript, outcome, and billing once the stream closes."""
     if session is not None and session.persisted:
         return

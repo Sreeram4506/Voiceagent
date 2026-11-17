@@ -1042,7 +1042,7 @@ function _renderAgentStudio(agents) {
                   <div class="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">${(ag.name||'S')[0]}</div>
                   <div class="min-w-0">
                     <div class="font-semibold text-[13px] truncate">${esc(ag.name)}</div>
-                    <div class="text-[11px] text-on-surface-variant">${ag.language} · ${ag.paused?'<span class="text-orange-500">Paused</span>':'<span class="text-tertiary">Active</span>'}</div>
+                    <div class="text-[11px] text-on-surface-variant">${ag.language} · ${(ag.agent_mode||'ai_agent')==='recorded_audio'?'<span class="text-violet-500">Audio</span>':'AI'} · ${ag.paused?'<span class="text-orange-500">Paused</span>':'<span class="text-tertiary">Active</span>'}</div>
                   </div>
                 </div>
               `).join('')
@@ -1089,13 +1089,16 @@ function _renderAgentStudio(agents) {
               </div>
               <div class="grid grid-cols-2 gap-2 text-[12px]">
                 ${[
-                  ['Voice', (a.voice_gender||'female')==='male' ? 'Male' : 'Female'],
-                  ['Engine', _tierLabel(a.voice_tier)],
-                  ['Speech rate', (a.speech_rate||1.05)+'×'],
-                  ['Style', _styleLabel(a.speaking_style)],
-                  ['Lang Mix', _langStyleLabel(a.language_style)],
-                  ['Creativity', _creativityLabel(a.temperature)],
-                  ['Greeting', a.greeting ? a.greeting : 'Auto-generated'],
+                  ['Mode', (a.agent_mode||'ai_agent')==='recorded_audio' ? 'Recorded Audio' : 'AI Agent'],
+                  ...((a.agent_mode||'ai_agent')!=='recorded_audio' ? [
+                    ['Voice', (a.voice_gender||'female')==='male' ? 'Male' : 'Female'],
+                    ['Engine', _tierLabel(a.voice_tier)],
+                    ['Speech rate', (a.speech_rate||1.05)+'×'],
+                    ['Style', _styleLabel(a.speaking_style)],
+                    ['Lang Mix', _langStyleLabel(a.language_style)],
+                    ['Creativity', _creativityLabel(a.temperature)],
+                    ['Greeting', a.greeting ? a.greeting : 'Auto-generated'],
+                  ] : []),
                   ['Audio', a.audio_greeting ? a.audio_greeting.filename : 'None'],
                 ].map(([label, val]) => `
                   <div class="p-2.5 bg-surface-container-low rounded-lg min-w-0">
@@ -1106,11 +1109,31 @@ function _renderAgentStudio(agents) {
               </div>
             </div>
 
+            ${(a.agent_mode||'ai_agent')!=='recorded_audio' ? `
             <div class="bg-white rounded-2xl shadow-card p-5">
               <h3 class="font-semibold mb-3">System Prompt</h3>
               <textarea class="textarea h-40" id="aScript">${esc(a.script||'')}</textarea>
               <p class="text-[11px] text-on-surface-variant mt-1">This is the LLM instruction that shapes the agent's personality and goal.</p>
-            </div>
+            </div>` : `
+            <div class="bg-white rounded-2xl shadow-card p-5">
+              <div class="flex items-center gap-3 mb-3">
+                <span class="material-symbols-outlined text-violet-500 text-[24px]">play_circle</span>
+                <div>
+                  <h3 class="font-semibold">Recorded Audio Agent</h3>
+                  <p class="text-[11px] text-on-surface-variant">This agent plays a pre-recorded audio file — no AI conversation.</p>
+                </div>
+              </div>
+              ${a.audio_greeting ? `
+                <div class="flex items-center gap-3 p-3 rounded-xl border border-primary/30 bg-primary-container/30">
+                  <span class="material-symbols-outlined text-primary text-[20px]">audio_file</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-[12px] font-semibold text-on-surface truncate">${esc(a.audio_greeting.filename)}</div>
+                    <div class="text-[10px] text-on-surface-variant">${(a.audio_greeting.size/1024).toFixed(1)} KB</div>
+                  </div>
+                  <audio src="/dashboard/api/employees/${a.id}/audio" class="h-8" style="max-width:200px" controls preload="none"></audio>
+                </div>
+              ` : '<p class="text-[12px] text-orange-500">No audio file uploaded yet — edit this agent to upload one.</p>'}
+            </div>`}
 
             <div class="flex gap-2">
               <button onclick="saveAgent()" class="btn-primary flex-1"><span class="material-symbols-outlined icon-sm">save</span> Save Changes</button>
@@ -1208,6 +1231,7 @@ function showCreateAgent(editEmp) {
   const rateVal = e.speech_rate || 1.05;
   const langVal = e.language || 'te';
   const tierVal = e.voice_tier || 'standard';
+  const agentMode = e.agent_mode || 'ai_agent';
 
   showModal(`
     <div class="bg-white rounded-2xl shadow-modal w-[520px] max-w-[calc(100vw-32px)] max-h-[92vh] overflow-y-auto" style="scrollbar-width:thin">
@@ -1246,8 +1270,37 @@ function showCreateAgent(editEmp) {
           </div>
         </div>
 
-        <!-- Section: Voice -->
+        <!-- Section: Agent Mode -->
         <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">swap_horiz</span> Agent Mode
+          </div>
+          <div class="grid grid-cols-2 gap-2 mb-1" id="caAgentModeWrap">
+            <button type="button" data-mode="ai_agent" onclick="_setAgentMode('ai_agent')"
+              class="p-3 rounded-xl border text-left transition-all cursor-pointer ${agentMode==='ai_agent'?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[20px] ${agentMode==='ai_agent'?'text-primary':'text-on-surface-variant'}">psychology</span>
+                <div>
+                  <div class="text-[12px] font-semibold text-on-surface">AI Agent</div>
+                  <div class="text-[10px] text-on-surface-variant">LLM-powered conversation</div>
+                </div>
+              </div>
+            </button>
+            <button type="button" data-mode="recorded_audio" onclick="_setAgentMode('recorded_audio')"
+              class="p-3 rounded-xl border text-left transition-all cursor-pointer ${agentMode==='recorded_audio'?'border-primary bg-primary-container shadow-sm':'border-surface-container-high hover:border-primary/50'}">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[20px] ${agentMode==='recorded_audio'?'text-primary':'text-on-surface-variant'}">play_circle</span>
+                <div>
+                  <div class="text-[12px] font-semibold text-on-surface">Recorded Audio</div>
+                  <div class="text-[10px] text-on-surface-variant">Play audio file, no AI</div>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section: Voice (hidden for recorded_audio mode) -->
+        <div id="caVoiceSection" style="${agentMode==='recorded_audio'?'display:none':''}">
           <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[14px]">graphic_eq</span> Voice Configuration
           </div>
@@ -1306,7 +1359,10 @@ function showCreateAgent(editEmp) {
           </div>
         </div>
 
-        <!-- Section: AI Personality -->
+        </div><!-- end caVoiceSection -->
+
+        <!-- Section: AI Personality (hidden for recorded_audio mode) -->
+        <div id="caAISection" style="${agentMode==='recorded_audio'?'display:none':''}">
         <div>
           <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[14px]">psychology</span> AI Personality
@@ -1364,12 +1420,33 @@ function showCreateAgent(editEmp) {
             <span>Precise</span><span>Balanced</span><span>Creative</span>
           </div>
 
-          <!-- Greeting -->
+          <!-- Greeting (AI mode only) -->
           <label class="text-[11px] font-semibold text-on-surface-variant mb-1 block">Opening Greeting</label>
           <input class="input mb-3" id="caGreeting" value="${esc(e.greeting||'')}" placeholder="Leave blank for auto-generated greeting"/>
+        </div>
 
-          <!-- Audio Greeting Upload -->
-          <label class="text-[11px] font-semibold text-on-surface-variant mb-2 block">Audio Greeting (optional)</label>
+        <!-- Section: System Prompt (AI mode only) -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">description</span> System Prompt
+          </div>
+          <textarea class="textarea h-28" id="caScript" placeholder="Describe what the agent should do, e.g. 'Book site visits for a real estate company selling plots near Hyderabad'…">${esc(e.script||'')}</textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button type="button" id="caGenerateBtn" onclick="_generatePrompt()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-primary text-white text-[11px] font-semibold shadow-sm hover:shadow-md transition-all active:scale-95">
+              <span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+              Auto-Generate Prompt
+            </button>
+            <span class="text-[10px] text-on-surface-variant">Type a brief description and click to generate a full prompt</span>
+          </div>
+        </div>
+        </div><!-- end caAISection -->
+
+        <!-- Section: Audio Upload (always visible — required for recorded_audio, optional for AI) -->
+        <div>
+          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">audio_file</span>
+            <span id="caAudioLabel">${agentMode==='recorded_audio' ? 'Audio File (required)' : 'Audio Greeting (optional)'}</span>
+          </div>
           <div id="caAudioSection" class="mb-3">
             ${e.audio_greeting ? `
               <div id="caAudioExisting" class="flex items-center gap-3 p-3 rounded-xl border border-primary/30 bg-primary-container/30">
@@ -1405,21 +1482,6 @@ function showCreateAgent(editEmp) {
                 <span class="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-          </div>
-        </div>
-
-        <!-- Section: System Prompt -->
-        <div>
-          <div class="text-[11px] font-bold text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-[14px]">description</span> System Prompt
-          </div>
-          <textarea class="textarea h-28" id="caScript" placeholder="Describe what the agent should do, e.g. 'Book site visits for a real estate company selling plots near Hyderabad'…">${esc(e.script||'')}</textarea>
-          <div class="flex items-center gap-2 mt-2">
-            <button type="button" id="caGenerateBtn" onclick="_generatePrompt()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-primary text-white text-[11px] font-semibold shadow-sm hover:shadow-md transition-all active:scale-95">
-              <span class="material-symbols-outlined text-[14px]">auto_awesome</span>
-              Auto-Generate Prompt
-            </button>
-            <span class="text-[10px] text-on-surface-variant">Type a brief description and click to generate a full prompt</span>
           </div>
         </div>
 
@@ -1472,13 +1534,38 @@ function showCreateAgent(editEmp) {
   `);
 }
 
+function _setAgentMode(mode) {
+  document.querySelectorAll('#caAgentModeWrap button').forEach(b => {
+    b.classList.remove('border-primary', 'bg-primary-container', 'shadow-sm');
+    b.classList.add('border-surface-container-high');
+    b.querySelector('.material-symbols-outlined').classList.remove('text-primary');
+    b.querySelector('.material-symbols-outlined').classList.add('text-on-surface-variant');
+  });
+  const active = document.querySelector('#caAgentModeWrap button[data-mode="' + mode + '"]');
+  if (active) {
+    active.classList.remove('border-surface-container-high');
+    active.classList.add('border-primary', 'bg-primary-container', 'shadow-sm');
+    active.querySelector('.material-symbols-outlined').classList.remove('text-on-surface-variant');
+    active.querySelector('.material-symbols-outlined').classList.add('text-primary');
+  }
+  const isRecorded = mode === 'recorded_audio';
+  const voiceSec = $('caVoiceSection');
+  const aiSec = $('caAISection');
+  const audioLabel = $('caAudioLabel');
+  if (voiceSec) voiceSec.style.display = isRecorded ? 'none' : '';
+  if (aiSec) aiSec.style.display = isRecorded ? 'none' : '';
+  if (audioLabel) audioLabel.textContent = isRecorded ? 'Audio File (required)' : 'Audio Greeting (optional)';
+}
+
 function _getAgentFormData() {
   const selectedGender = document.querySelector('#caGenderWrap button.bg-primary')?.dataset?.gender || 'female';
   const selectedStyle = document.querySelector('#caStyleWrap button.bg-primary-container')?.dataset?.style || 'humanized';
   const selectedLangStyle = document.querySelector('#caLangStyleWrap button.bg-primary-container')?.dataset?.langstyle || 'natural_mix';
   const selectedTier = document.querySelector('input[name="caTier"]:checked')?.value || 'standard';
+  const selectedMode = document.querySelector('#caAgentModeWrap button.bg-primary-container')?.dataset?.mode || 'ai_agent';
   return {
     name: $('caName')?.value || 'Suma',
+    agent_mode: selectedMode,
     language: $('caLang')?.value || 'te',
     script: $('caScript')?.value || 'You are Suma, a polite Telugu voice agent.',
     voice_gender: selectedGender,
