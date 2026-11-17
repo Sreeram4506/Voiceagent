@@ -1,6 +1,7 @@
 """WebSocket endpoint the telephony provider connects to for each live call."""
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import os
@@ -17,7 +18,7 @@ from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.protocol import parse_event
 from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
-from app.streaming.recorded import RecordedAudioSession
+from app.streaming.recorded import RecordedAudioSession, _to_pcm_8k
 from app.streaming.session import StreamSession
 from datetime import datetime
 
@@ -134,8 +135,17 @@ def prepare_call(call_id: int) -> None:
     if call_id in _prepared:
         return
 
-    async def prepare() -> RealtimeSession | None:
-        return _start_realtime(await asyncio.to_thread(_load_context, call_id))
+    async def prepare() -> RealtimeSession | dict | None:
+        ctx = await asyncio.to_thread(_load_context, call_id)
+        if ctx is not None and ctx.agent_mode == "recorded_audio":
+            audio = ctx.extras.get("audio_greeting")
+            if audio and audio.get("data"):
+                raw = base64.b64decode(audio["data"])
+                pcm = await asyncio.to_thread(_to_pcm_8k, raw, audio.get("content_type", "audio/mpeg"))
+                print(f"[WS] prepared recorded audio: {len(pcm)} bytes PCM")
+                return {"type": "recorded", "pcm": pcm, "filename": audio.get("filename", "greeting.mp3")}
+            return None
+        return _start_realtime(ctx)
 
     task = asyncio.create_task(prepare())
     _prepared[call_id] = task
@@ -155,9 +165,9 @@ def _discard_unclaimed(call_id: int, task: asyncio.Task) -> None:
     del _prepared[call_id]
 
     async def close() -> None:
-        session = await task
-        if session is not None:
-            await session.cancel()
+        result = await task
+        if isinstance(result, RealtimeSession):
+            await result.cancel()
 
     asyncio.create_task(close())
 
@@ -199,31 +209,49 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         await websocket.send_text(message)
 
     async def end() -> None:
-        _persist(call_id, holder["session"])
+        try:
+            _persist(call_id, holder["session"])
+        except Exception as e:
+            print(f"[WS] persist error in end callback: {e}")
         await websocket.close()
 
-    ctx: CallContext | None = _load_context(call_id)
-
-    if ctx is not None and ctx.agent_mode == "recorded_audio":
-        audio = ctx.extras.get("audio_greeting")
-        if audio and audio.get("data"):
-            print(f"[WS] recorded_audio mode — playing {audio.get('filename', 'audio')}")
-            session = RecordedAudioSession(
-                audio_b64=audio["data"],
-                content_type=audio.get("content_type", "audio/mpeg"),
-                filename=audio.get("filename", "greeting.mp3"),
-                stream_sid=stream_sid,
-                send=send,
-                on_end=end,
-            )
-            holder["session"] = session
-            await session.start()
-            return session
-        print("[WS] recorded_audio mode but no audio file — falling back to AI")
-
     prepared = _prepared.pop(call_id, None)
-    realtime = await prepared if prepared is not None else None
+    result = await prepared if prepared is not None else None
+
+    if isinstance(result, dict) and result.get("type") == "recorded":
+        print(f"[WS] recorded_audio mode (prepared) — playing {result['filename']}")
+        session = RecordedAudioSession(
+            pcm=result["pcm"],
+            filename=result["filename"],
+            stream_sid=stream_sid,
+            send=send,
+            on_end=end,
+        )
+        holder["session"] = session
+        await session.start()
+        return session
+
+    realtime = result if isinstance(result, RealtimeSession) else None
+
+    ctx: CallContext | None = None
     if realtime is None:
+        ctx = _load_context(call_id)
+        if ctx is not None and ctx.agent_mode == "recorded_audio":
+            audio = ctx.extras.get("audio_greeting")
+            if audio and audio.get("data"):
+                print(f"[WS] recorded_audio mode (inline) — playing {audio.get('filename', 'audio')}")
+                session = RecordedAudioSession(
+                    audio_b64=audio["data"],
+                    content_type=audio.get("content_type", "audio/mpeg"),
+                    filename=audio.get("filename", "greeting.mp3"),
+                    stream_sid=stream_sid,
+                    send=send,
+                    on_end=end,
+                )
+                holder["session"] = session
+                await session.start()
+                return session
+            print("[WS] recorded_audio mode but no audio file — falling back to AI")
         realtime = _start_realtime(ctx)
 
     if realtime is not None:

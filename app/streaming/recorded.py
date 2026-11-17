@@ -2,7 +2,6 @@
 
 import asyncio
 import base64
-import io
 import subprocess
 import tempfile
 from contextlib import suppress
@@ -36,13 +35,16 @@ class RecordedAudioSession:
 
     def __init__(
         self,
-        audio_b64: str,
-        content_type: str,
-        filename: str,
+        *,
+        pcm: bytes | None = None,
+        audio_b64: str = "",
+        content_type: str = "audio/mpeg",
+        filename: str = "greeting.mp3",
         stream_sid: str,
         send,
         on_end,
     ):
+        self._pcm = pcm
         self._audio_b64 = audio_b64
         self._content_type = content_type
         self._filename = filename
@@ -62,20 +64,26 @@ class RecordedAudioSession:
 
     async def _play(self) -> None:
         try:
-            raw_audio = base64.b64decode(self._audio_b64)
-            pcm = await asyncio.to_thread(_to_pcm_8k, raw_audio, self._content_type)
+            if self._pcm is not None:
+                pcm = self._pcm
+            else:
+                raw_audio = base64.b64decode(self._audio_b64)
+                pcm = await asyncio.to_thread(_to_pcm_8k, raw_audio, self._content_type)
             print(f"[RECORDED] playing {self._filename}: {len(pcm)} bytes PCM")
             chunk_bytes = 8000 * 2  # 1 second of 8 kHz 16-bit mono
             for i in range(0, len(pcm), chunk_bytes):
                 chunk = pcm[i:i + chunk_bytes]
                 await self._safe_send(media_message(self.stream_sid, chunk))
                 await asyncio.sleep(len(chunk) / (8000 * 2))
+            await asyncio.sleep(0.5)
         except Exception as e:
             print(f"[RECORDED] playback error: {e}")
         self.ended = True
         if self._on_end:
-            with suppress(RuntimeError, OSError):
+            try:
                 await self._on_end()
+            except Exception as e:
+                print(f"[RECORDED] on_end error: {e}")
 
     async def on_audio(self, frame: bytes) -> None:
         self.frames_received += 1
