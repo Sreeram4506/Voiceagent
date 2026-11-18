@@ -15,13 +15,13 @@ import os
 import re
 import sys
 import time
-import wave
 from datetime import datetime
 from datetime import time as dtime
 from pathlib import Path
 
 import httpx
 import numpy as np
+import soundfile as sf
 import websockets
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -244,11 +244,7 @@ def write_mix(path: Path, line: Line) -> None:
         samples = np.frombuffer(pcm[: len(pcm) - len(pcm) % 2], dtype="<i2").astype(np.int32)
         i = int(start * RATE)
         mix[i:i + len(samples)] += samples[: len(mix) - i]
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(RATE)
-        w.writeframes(np.clip(mix, -32768, 32767).astype("<i2").tobytes())
+    sf.write(str(path), np.clip(mix, -32768, 32767).astype(np.int16), RATE, subtype="PCM_16")
 
 
 if __name__ == "__main__":
