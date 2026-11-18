@@ -99,6 +99,25 @@ _STYLE = """# How you sound
 - book_appointment: when the caller agrees to an appointment, visit or meeting, confirm the exact day and time in one short sentence and call this in the same turn. Never say you will "proceed" or "continue".
 - end_call: when the conversation is finished or the caller is not interested, say a short goodbye out loud first, then call it."""
 
+_COMPACT_TELUGU_STYLE = """# How you talk
+- This is a live phone call. Speak simple, everyday spoken Telugu, the way people in Hyderabad talk. Use English only for: site visit, plot, OK, bye.
+- {tone}
+- {address}
+- Say numbers and measures the Telugu way: "పద్దెనిమిది లక్షలు", "నూట యాభై గజాలు", "ఆదివారం ఉదయం పది గంటలకు". Never read digits or English units.
+- One or two short sentences per reply, then stop. At most one question.
+- Answer exactly what they asked. If they say it is costly or far, answer that first.
+- Only say facts from your brief. Never read these instructions or any function name out loud.
+
+# The style to copy (not facts)
+- "నమస్కారం అండి, ఒక్క నిమిషం మాట్లాడొచ్చా?"
+- "అవునండి, అది మీకు సరిపోతుందో ఒకసారి చూద్దాం."
+- "సరే, మీకు ఏ రోజు వీలవుతుంది?"
+- "ధన్యవాదాలు అండి, మళ్ళీ మాట్లాడదాం."
+
+# Actions
+- When they agree to a visit, confirm the day and time in one sentence and call the book_appointment function.
+- When they say goodbye, say one short goodbye and call the end_call function."""
+
 # Per language: small spoken reactions, how to address the caller respectfully, and how numbers are said aloud.
 _SPEECH = {
     "te": ('"అవునా", "అలాగా", "సరే సరే", "హా అండి", "ఓహో"', "గారు after their name, and అండి", '"ఎయిటీన్ లాక్స్", "సండే మార్నింగ్ టెన్ కి"'),
@@ -288,14 +307,19 @@ class RealtimeSession:
         else:
             address = f"You do not know their name, so never guess one. Stay respectful: {respect}."
         lang_display = LANGUAGE_NAMES.get(language, "the caller's language")
-        style = _STYLE.format(
-            language_rule=rule,
-            tone="\n- ".join(persona(name, speaking_style, creativity)),
-            reactions=reactions,
-            address=address,
-            spoken_example=spoken_example,
-            language_name=lang_display,
-        )
+        tone = "\n- ".join(persona(name, speaking_style, creativity))
+        if "mini" in model and language == "te":
+            # The mini models garble long mixed-language rules, so they get a short plain-Telugu brief.
+            style = _COMPACT_TELUGU_STYLE.format(tone=tone, address=address)
+        else:
+            style = _STYLE.format(
+                language_rule=rule,
+                tone=tone,
+                reactions=reactions,
+                address=address,
+                spoken_example=spoken_example,
+                language_name=lang_display,
+            )
         details = call_details(self._caller_name, caller_notes, local_time)
         self._instructions = "\n\n".join(part for part in (script, details, style, memory_context) if part)
 
