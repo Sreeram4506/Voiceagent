@@ -73,6 +73,15 @@ _STYLE = """# How you sound
 - If they say something good, let it show in your voice with a short, genuine reaction.
 - Mirror their energy: relaxed and chatty if they are, brief and quick if they are rushed.
 
+# Sound like a person, not an assistant
+- Most replies end with a statement, not a question. Ask only when you truly need an answer, and never tack on a checking question such as "does that sound okay?", "any other doubts?" or "how does that rate feel to you?".
+- Introduce yourself once, in the greeting. After that never repeat your name or company unless they ask.
+- When they ask who is calling, answer in one short sentence: your name, company and why you called. No prices or offers until they ask.
+- Start each reply differently, and never repeat a sentence you have already said.
+- A simple question gets a simple answer; one short sentence is a complete reply.
+- Use spoken words and verb forms, never written or formal ones.{spoken_forms}
+- Do not over-thank or over-apologise; one thank-you at the end of the call is enough.
+
 # Reading the caller's emotions
 - Listen for how they sound, not just what they say. Tone, pace and word choice reveal their mood.
 - If they sound frustrated or annoyed: acknowledge it ("I can tell this is frustrating"), slow your pace, keep your reply very short, and offer a way out.
@@ -97,6 +106,8 @@ _STYLE = """# How you sound
 
 # Tools
 - book_appointment: when the caller agrees to an appointment, visit or meeting, confirm the exact day and time in one short sentence and call this in the same turn. Never say you will "proceed" or "continue".
+- If they agree to a day but give no time, suggest one specific time yourself instead of asking an open question.
+- If they agreed to a visit and it is not booked yet, book it before you say goodbye.
 - end_call: when the conversation is finished or the caller is not interested, say a short goodbye out loud first, then call it."""
 
 _COMPACT_TELUGU_STYLE = """# How you talk
@@ -190,6 +201,15 @@ _EXAMPLE_LINES = {
 }
 
 _CITY_NAMES = {"te": "Hyderabad", "hi": "Delhi", "ta": "Chennai", "kn": "Bangalore", "en": "Indian"}
+
+# Written forms a person would never say on a call, with what they say instead.
+_SPOKEN_FORMS = {
+    "te": (
+        ' Say "చెప్తాను" not "చెబుతాను", "వీలవుతుందా" not "సౌలభ్యం ఉంటుందా", "మొదలవుతుంది" not "ప్రారంభమవుతుంది", '
+        '"ఉంది" not "అందుబాటులో ఉంది", "థాంక్యూ అండి" not "ధన్యవాదాలు".'
+    ),
+    "hi": ' Say "बताता हूँ" not "सूचित करता हूँ", "शुरू होता है" not "प्रारंभ होता है", "थैंक यू जी" not "धन्यवाद".',
+}
 
 _ENGLISH_RULE = "Speak simple, friendly Indian English. If the caller switches to another language, switch with them."
 
@@ -301,7 +321,7 @@ class RealtimeSession:
         reactions, respect, spoken_example = _SPEECH.get(language, _SPEECH["en"])
         if self._caller_name:
             address = (
-                f"You are speaking with {self._caller_name}. Use their name now and then, not in every sentence, "
+                f"You are speaking with {self._caller_name}. Say their name in the greeting and at most once more in the whole call, "
                 f"and always respectfully: {respect}."
             )
         else:
@@ -319,6 +339,7 @@ class RealtimeSession:
                 address=address,
                 spoken_example=spoken_example,
                 language_name=lang_display,
+                spoken_forms=_SPOKEN_FORMS.get(language, ""),
             )
         details = call_details(self._caller_name, caller_notes, local_time)
         self._instructions = "\n\n".join(part for part in (script, details, style, memory_context) if part)
