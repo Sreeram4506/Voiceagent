@@ -1,7 +1,8 @@
 """Chooses speech and LLM providers for a call.
 
-Default: the low-cost STT -> LLM -> TTS relay. OpenAI Realtime speech-to-speech
-(realtime_session.py) is faster but costs far more; turn it on with VA_VOICE_PIPELINE=realtime.
+Default: OpenAI Realtime speech-to-speech (see realtime_session.py). The STT/LLM/TTS
+relay below is the fallback when Realtime is unavailable, serves voice_clone agents,
+and can be forced with VA_VOICE_PIPELINE=classic to save cost.
 
 TTS priority:
   voice_clone tier       → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
@@ -73,8 +74,8 @@ def _build_tts(employee, openai_key, extras=None):
 
 
 def use_realtime(voice_tier: str, mode: str) -> bool:
-    """OpenAI Realtime speech-to-speech is opt-in (VA_VOICE_PIPELINE=realtime) because it costs far more per minute."""
-    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "classic") != "realtime":
+    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay."""
+    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
         return False
     return bool(os.getenv("OPENAI_API_KEY")) and mode != "broadcast" and voice_tier != "voice_clone"
 

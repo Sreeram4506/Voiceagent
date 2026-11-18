@@ -46,3 +46,7 @@ Thumbs.db
 # Third-party cloned repositories
 indicf5_repo/
 
+
+# Simulated call recordings
+call_tests/*.wav
+call_tests/*.json

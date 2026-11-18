@@ -110,6 +110,45 @@ def test_booking_is_recorded_and_end_call_hangs_up_after_the_goodbye():
     asyncio.run(scenario())
 
 
+def test_silent_hang_up_says_goodbye_first_then_ends_the_call():
+    async def scenario():
+        session, to_openai, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await session._on_event({"type": "input_audio_buffer.committed", "item_id": "c-bye"})
+
+        hangup = {"type": "function_call", "name": "end_call", "call_id": "c1"}
+        await session._on_event({"type": "response.done", "response": {"status": "completed", "output": [hangup]}})
+        assert to_openai[-1]["type"] == "response.create"
+        assert "goodbye" in to_openai[-1]["response"]["instructions"]
+        await asyncio.sleep(0.4)
+        assert not ended  # no hanging up before the goodbye is said
+
+        goodbye = {"type": "message", "role": "assistant"}
+        await session._on_event(agent_audio("bye", 0.1))
+        await session._on_event({"type": "response.done", "response": {"status": "completed", "output": [goodbye]}})
+        await asyncio.sleep(0.6)
+        assert ended and session.ended
+
+    asyncio.run(scenario())
+
+
+def test_reply_the_caller_talked_over_never_plays_on_the_line():
+    async def scenario():
+        session, _, to_phone, send, end, _ = make_session()
+        await session.attach("sid", send, end)
+        await session._on_event({"type": "response.created", "response": {"id": "resp_early"}})
+        await session._on_event({"type": "input_audio_buffer.speech_started"})  # caller kept talking
+
+        await session._on_event(agent_audio("early", 0.5) | {"response_id": "resp_early"})
+        assert to_phone == []
+
+        await session._on_event({"type": "response.created", "response": {"id": "resp_real"}})
+        await session._on_event(agent_audio("real", 0.5) | {"response_id": "resp_real"})
+        assert [m["event"] for m in to_phone] == ["playAudio"]
+
+    asyncio.run(scenario())
+
+
 def test_agent_knows_who_it_is_calling_and_what_time_it_is_there():
     from datetime import datetime
 
