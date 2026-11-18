@@ -69,3 +69,53 @@ class RealtimeUsage:
             f"audio out {self.audio_out}, text in {self.text_in} (cached {self.cached_text_in}), "
             f"text out {self.text_out}, transcription {self.transcribe_in}+{self.transcribe_out} tokens"
         )
+
+
+# Gemini Live, USD per 1M tokens: text in, audio in, text out, audio out.
+# From https://aistudio.google.com/docs/pricing (Nov 2026, paid tier); update when Google changes them.
+GEMINI_PRICES = {
+    "gemini-3.8-live": (0.75, 3.00, 4.50, 12.00),
+    "gemini-3.8-live-extended-thinking": (0.75, 3.00, 4.50, 12.00),
+    "gemini-3.1-flash-live-preview": (0.75, 3.00, 4.50, 12.00),
+    "gemini-2.5-flash-native-audio-preview-12-2025": (0.50, 3.00, 2.00, 12.00),
+    "gemini-2.5-flash-native-audio-latest": (0.50, 3.00, 2.00, 12.00),
+}
+
+
+@dataclass
+class GeminiUsage:
+    text_in: int = 0
+    audio_in: int = 0
+    text_out: int = 0
+    audio_out: int = 0
+    replies: int = 0
+
+    def add(self, meta: dict) -> None:
+        """Add one usageMetadata block; Gemini sends one per model turn."""
+        for detail in meta.get("promptTokensDetails") or []:
+            if detail.get("modality") == "AUDIO":
+                self.audio_in += detail.get("tokenCount", 0)
+            else:
+                self.text_in += detail.get("tokenCount", 0)
+        for detail in meta.get("responseTokensDetails") or []:
+            if detail.get("modality") == "AUDIO":
+                self.audio_out += detail.get("tokenCount", 0)
+            else:
+                self.text_out += detail.get("tokenCount", 0)
+        self.text_out += meta.get("thoughtsTokenCount", 0)
+        self.replies += 1
+
+    def cost_usd(self, model: str) -> float | None:
+        prices = GEMINI_PRICES.get(model)
+        if prices is None:
+            return None
+        counts = (self.text_in, self.audio_in, self.text_out, self.audio_out)
+        return sum(count * price for count, price in zip(counts, prices)) / 1_000_000
+
+    def report(self, model: str) -> str:
+        cost = self.cost_usd(model)
+        price = f"${cost:.4f} ≈ ₹{cost * USD_TO_INR:.2f}" if cost is not None else "no price known for this model"
+        return (
+            f"{model} {price} | {self.replies} replies, audio in {self.audio_in}, audio out {self.audio_out}, "
+            f"text in {self.text_in}, text out {self.text_out} tokens"
+        )

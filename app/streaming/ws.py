@@ -16,6 +16,7 @@ from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
+from app.streaming.gemini_live_session import GEMINI_MODEL, GeminiLiveSession
 from app.streaming.memory import load_memory, memory_to_prompt, update_memory
 from app.streaming.protocol import parse_event
 from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
@@ -120,21 +121,23 @@ def _persona_settings(ctx: CallContext) -> dict:
 def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
     if ctx is None or not factory.use_realtime(ctx.employee.voice_tier.value, ctx.mode):
         return None
-    ps = _persona_settings(ctx)
-    session = RealtimeSession(
-        api_key=os.environ["OPENAI_API_KEY"],
-        script=ctx.employee.script,
-        language=ctx.employee.language,
-        greeting=ctx.greeting,
-        voice_gender=ctx.extras.get("voice_gender", "female"),
-        model=MODEL_BY_TIER.get(ctx.employee.voice_tier.value, MODEL),
-        speech_rate=_number(ctx.extras.get("speech_rate"), 1.0),
-        caller_name=ctx.caller_name,
-        caller_notes=ctx.caller_notes,
-        local_time=_local_time(ctx.timezone),
-        memory_context=ctx.memory_context,
-        **ps,
-    )
+    call = {
+        "script": ctx.employee.script,
+        "language": ctx.employee.language,
+        "greeting": ctx.greeting,
+        "voice_gender": ctx.extras.get("voice_gender", "female"),
+        "speech_rate": _number(ctx.extras.get("speech_rate"), 1.0),
+        "caller_name": ctx.caller_name,
+        "caller_notes": ctx.caller_notes,
+        "local_time": _local_time(ctx.timezone),
+        "memory_context": ctx.memory_context,
+        **_persona_settings(ctx),
+    }
+    if factory.voice_engine() == "gemini":
+        session = GeminiLiveSession(api_key=os.environ["GEMINI_API_KEY"], model=GEMINI_MODEL, **call)
+    else:
+        model = MODEL_BY_TIER.get(ctx.employee.voice_tier.value, MODEL)
+        session = RealtimeSession(api_key=os.environ["OPENAI_API_KEY"], model=model, **call)
     session.connect()
     return session
 

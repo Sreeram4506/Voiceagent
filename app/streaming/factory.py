@@ -77,7 +77,13 @@ def use_realtime(voice_tier: str, mode: str) -> bool:
     """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay."""
     if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
         return False
-    return bool(os.getenv("OPENAI_API_KEY")) and mode != "broadcast" and voice_tier != "voice_clone"
+    key = "GEMINI_API_KEY" if voice_engine() == "gemini" else "OPENAI_API_KEY"
+    return bool(os.getenv(key)) and mode != "broadcast" and voice_tier != "voice_clone"
+
+
+def voice_engine() -> str:
+    """Which speech-to-speech service runs calls: "openai" (default) or "gemini" (VA_VOICE_ENGINE=gemini)."""
+    return os.getenv("VA_VOICE_ENGINE", "openai").strip().lower()
 
 
 def build_providers(employee, extras=None):

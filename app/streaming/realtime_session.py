@@ -28,9 +28,10 @@ TRANSCRIBE_MODEL = "gpt-4o-transcribe"
 VOICES = {"female": "marin", "male": "cedar"}
 LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "Tamil", "kn": "Kannada"}
 
-# Semantic turn detection: the model judges when the caller has finished their thought, so it
-# does not jump in at a mid-sentence pause. "high" answers sooner but cuts in at commas.
-TURN_EAGERNESS = os.environ.get("VA_TURN_EAGERNESS", "auto")
+# How long the caller must be silent before the agent answers. Semantic turn detection can wait
+# seconds on real Telugu speech; a fixed pause is predictable. 500 ms rides over comma pauses
+# (300-450 ms) without making every reply feel late.
+END_OF_TURN_SILENCE_MS = int(os.environ.get("VA_END_OF_TURN_MS", "500"))
 GOODBYE_ASK = "The caller is ending the call. Say one short, warm goodbye in their language, then stop."
 # The callee's own "hello" on pickup lands on top of the greeting; don't let it cut the greeting off.
 GREETING_GUARD_SECONDS = 1.5
@@ -489,8 +490,10 @@ class RealtimeSession:
                         "noise_reduction": {"type": "near_field"},
                         "transcription": transcription,
                         "turn_detection": {
-                            "type": "semantic_vad",
-                            "eagerness": TURN_EAGERNESS,
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": END_OF_TURN_SILENCE_MS,
                             "create_response": True,
                             "interrupt_response": True,
                         },
@@ -502,26 +505,26 @@ class RealtimeSession:
             },
         }
 
-    def _greeting_request(self) -> dict:
+    def _opening_instruction(self) -> str:
         if self._greeting:
-            opening = (
+            return (
                 "The person has just picked up. Open the call by saying this line naturally "
                 f'in a warm, conversational voice: "{self._greeting}" — make it sound like you, not like you are reading.'
             )
-        else:
-            if self._caller_name:
-                opening = (
-                    f"The person has just picked up. In one short line: say hello, confirm you are speaking "
-                    f"with {self._caller_name}, and say your name. Then stop and wait for their reply."
-                )
-            else:
-                opening = (
-                    "The person has just picked up. In one short line: say hello, say your name, "
-                    "and ask if they have a minute. Then stop and wait for their reply."
-                )
+        if self._caller_name:
+            return (
+                f"The person has just picked up. In one short line: say hello, confirm you are speaking "
+                f"with {self._caller_name}, and say your name. Then stop and wait for their reply."
+            )
+        return (
+            "The person has just picked up. In one short line: say hello, say your name, "
+            "and ask if they have a minute. Then stop and wait for their reply."
+        )
+
+    def _greeting_request(self) -> dict:
         return {
             "type": "response.create",
-            "response": {"instructions": f"{self._instructions}\n\n{opening}", "tool_choice": "none"},
+            "response": {"instructions": f"{self._instructions}\n\n{self._opening_instruction()}", "tool_choice": "none"},
         }
 
     async def _to_openai(self, event: dict) -> None:
@@ -652,23 +655,26 @@ class RealtimeSession:
             if self._silent_for(time.monotonic()) >= SILENCE_CHECK_SECONDS:
                 await self._check_in()
 
-    async def _check_in(self) -> None:
-        """The caller has gone quiet: ask if they are still there, and give up politely after a couple of tries."""
+    def _next_check_in(self) -> str:
+        """Count one silence check-in and return what the agent should say for it."""
         self._silence_checks += 1
         self._quiet_since = time.monotonic()
         self._responding = True
+        print(f"[Realtime] silence on the line, check {self._silence_checks}")
         if self._silence_checks > MAX_SILENCE_CHECKS:
             self._giving_up = True
-            ask = (
+            return (
                 "The caller still has not answered. In one short line, say the line seems to be unclear "
                 "and that you will try them again later, and say goodbye."
             )
-        else:
-            ask = (
-                "The caller has gone quiet for several seconds. In three or four words, the way a person would, "
-                "check that they are still there and can hear you. Do not repeat what you said before."
-            )
-        print(f"[Realtime] silence on the line, check {self._silence_checks}")
+        return (
+            "The caller has gone quiet for several seconds. In three or four words, the way a person would, "
+            "check that they are still there and can hear you. Do not repeat what you said before."
+        )
+
+    async def _check_in(self) -> None:
+        """The caller has gone quiet: ask if they are still there, and give up politely after a couple of tries."""
+        ask = self._next_check_in()
         await self._to_openai({
             "type": "response.create",
             "response": {"instructions": f"{self._instructions}\n\n{ask}", "tool_choice": "none"},
