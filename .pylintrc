@@ -1,0 +1,37 @@
+[MAIN]
+# Errors (E) always fail. Warnings and style notes only lower the score, and the run
+# fails if the score drops below fail-under.
+fail-on=E
+fail-under=8.5
+# Lint from the repo root so a test file checked on its own can still import the app package.
+init-hook=import sys; sys.path.insert(0, ".")
+
+[FORMAT]
+# Agent prompts are long natural-language strings kept on one line.
+max-line-length=180
+
+[MESSAGES CONTROL]
+disable=
+    # Docstrings are written only where the why is not obvious.
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    # Providers are imported lazily so optional speech engines stay optional.
+    import-outside-toplevel,
+    # Scripts add the project root to sys.path before importing the app.
+    wrong-import-position,
+    # Tests drive sessions through their internal event handlers.
+    protected-access,
+    # pytest fixtures are passed as arguments that share the fixture's name.
+    redefined-outer-name,
+    # SQLAlchemy 2.0 false positives: Mapped[...] annotations and func.count().
+    unsubscriptable-object,
+    not-callable,
+    # Session and provider classes carry call state and many settings by design.
+    too-many-instance-attributes,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-branches,
+    too-few-public-methods,

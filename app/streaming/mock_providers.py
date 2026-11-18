@@ -1,5 +1,8 @@
 """Scripted async providers for tests and local runs. No network, deterministic."""
 
+# The mocks must accept every argument of the provider protocols they stand in for.
+# pylint: disable=unused-argument
+
 from collections.abc import AsyncIterator
 
 from app.providers.base import ToolRequest
