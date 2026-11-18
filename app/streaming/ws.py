@@ -179,6 +179,7 @@ def _discard_unclaimed(call_id: int, task: asyncio.Task) -> None:
         result = await task
         if isinstance(result, RealtimeSession):
             await result.cancel()
+            print(f"[Cost] call {call_id} not answered, greeting only: {result.usage_report()}")
 
     asyncio.create_task(close())
 
@@ -321,11 +322,13 @@ def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAu
 
         lead = db.get(Lead, call.lead_id) if call.lead_id else None
         employee = db.get(AIEmployee, call.employee_id)
-        result = CallResult(
-            outcome=session.outcome(),
-            summary=f"{len(session.turns)} turns; outcome={session.outcome()}",
-            actions=session.actions,
-        )
+        summary = f"{len(session.turns)} turns; outcome={session.outcome()}"
+        if isinstance(session, RealtimeSession):
+            print(f"[Cost] call {call_id} {session.usage_report()}")
+            cost = session.cost_usd()
+            if cost is not None:
+                summary += f"; OpenAI ${cost:.4f}"
+        result = CallResult(outcome=session.outcome(), summary=summary, actions=session.actions)
         connected_seconds = session.frames_received * FRAME_MS // 1000
         finalize_call(db, call, employee, lead, result, connected_seconds=connected_seconds, now=datetime.utcnow())
         db.commit()

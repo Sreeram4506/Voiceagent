@@ -18,6 +18,7 @@ import numpy as np
 import websockets
 
 from app.streaming.protocol import clear_message, media_message
+from app.streaming.realtime_cost import RealtimeUsage
 
 # gpt-realtime-1.5 answers ~0.5s sooner than the gpt-realtime-2.x reasoning models on Telugu calls.
 MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime-1.5")
@@ -320,6 +321,7 @@ class RealtimeSession:
         self._response_id = ""
         self._talked_over: set[str] = set()  # responses the caller spoke over before their audio arrived
         self._spoke_since_caller = False
+        self.usage = RealtimeUsage()
         self._spoken: set[str] = set()
         self._guard_until = 0.0
         self._t0 = time.monotonic()
@@ -382,6 +384,12 @@ class RealtimeSession:
         if self.ended:
             return "completed"
         return "no_resolution"
+
+    def cost_usd(self) -> float | None:
+        return self.usage.cost_usd(self._model)
+
+    def usage_report(self) -> str:
+        return self.usage.report(self._model)
 
     # ---- inbound phone audio ---------------------------------------------
 
@@ -515,6 +523,7 @@ class RealtimeSession:
             self._response_id = event.get("response", {}).get("id", "")
 
         elif kind == "conversation.item.input_audio_transcription.completed":
+            self.usage.add_transcription(event.get("usage") or {})
             text = event.get("transcript", "")
             self._items.setdefault(event.get("item_id", ""), ["caller", ""])[1] = text
             print(f"[Realtime] caller: {text!r}")
@@ -530,6 +539,7 @@ class RealtimeSession:
         elif kind == "response.done":
             self._responding = False
             response = event.get("response", {})
+            self.usage.add_response(response.get("usage") or {})
             was_giving_up = self._giving_up  # only a goodbye asked for earlier may end the call here
             await self._handle_tools(response)
             if was_giving_up and response.get("status") == "completed" and self._end_task is None:

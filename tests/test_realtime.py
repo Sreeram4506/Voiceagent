@@ -244,3 +244,37 @@ def test_caller_speaking_again_resets_the_silence_checks():
         assert not ended
 
     asyncio.run(scenario())
+
+
+REPLY_USAGE = {
+    "input_token_details": {"text_tokens": 2000, "audio_tokens": 500,
+                            "cached_tokens_details": {"text_tokens": 1500, "audio_tokens": 100}},
+    "output_token_details": {"text_tokens": 50, "audio_tokens": 300},
+}
+
+
+def test_call_cost_adds_every_reply_and_the_caller_transcription():
+    async def scenario():
+        session, *_ = make_session(model="gpt-realtime-1.5")
+        for _ in range(2):
+            await session._on_event({"type": "response.done", "response": {"status": "completed", "usage": REPLY_USAGE}})
+        await session._on_event({"type": "conversation.item.input_audio_transcription.completed", "item_id": "c1",
+                                 "transcript": "హలో", "usage": {"type": "tokens", "input_tokens": 40, "output_tokens": 10}})
+        # per reply: 500 text + 1500 cached text + 50 text out + 400 audio + 100 cached audio + 300 audio out
+        reply = 500 * 4.00 + 1500 * 0.40 + 50 * 16.00 + 400 * 32.00 + 100 * 0.40 + 300 * 64.00
+        transcription = 40 * 2.50 + 10 * 10.00
+        assert abs(session.cost_usd() - (2 * reply + transcription) / 1_000_000) < 1e-12
+        report = session.usage_report()
+        assert report.startswith("gpt-realtime-1.5 $0.0711") and "2 replies" in report
+
+    asyncio.run(scenario())
+
+
+def test_model_without_a_known_price_reports_tokens_but_no_cost():
+    async def scenario():
+        session, *_ = make_session(model="gpt-realtime-future")
+        await session._on_event({"type": "response.done", "response": {"status": "completed", "usage": REPLY_USAGE}})
+        assert session.cost_usd() is None
+        assert "no price known" in session.usage_report() and "audio out 300" in session.usage_report()
+
+    asyncio.run(scenario())
