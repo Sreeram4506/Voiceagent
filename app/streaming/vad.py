@@ -9,7 +9,7 @@ from app.streaming.audio import FRAME_MS, frame_rms
 class EnergyVAD:
     threshold: float = 500.0
     min_speech_ms: int = 150
-    end_silence_ms: int = 300      # increased from 150 — less trigger-happy on short pauses
+    end_silence_ms: int = 500      # callers pause 300-450 ms at a comma; shorter answers half a sentence
     adaptive: bool = True          # track background noise and adjust threshold
 
     def __post_init__(self) -> None:
@@ -26,14 +26,15 @@ class EnergyVAD:
     def feed(self, frame: bytes) -> str | None:
         """Returns "speech_start", "speech_end", or None for each 20 ms frame."""
         rms = frame_rms(frame)
-        self._frame_count += 1
 
-        # Adaptive noise floor: exponential moving average of quiet frames
-        if self.adaptive and not self._in_speech:
+        # Adaptive noise floor from quiet frames only: if the caller talks straight away, their voice
+        # must not be learned as background noise, or the detector goes deaf to them.
+        if self.adaptive and not self._in_speech and rms < self.threshold:
+            self._frame_count += 1
             if self._frame_count <= 25:
-                # First 500ms: bootstrap the noise estimate
+                # First 500 ms of quiet: bootstrap the noise estimate
                 self._noise_floor = (self._noise_floor * (self._frame_count - 1) + rms) / self._frame_count
-            elif rms < self.threshold:
+            else:
                 self._noise_floor = self._noise_floor * 0.97 + rms * 0.03
 
         effective_threshold = self.threshold

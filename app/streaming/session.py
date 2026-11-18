@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 from collections import deque
 from pathlib import Path
 from collections.abc import Awaitable, Callable
@@ -11,14 +12,16 @@ from contextlib import suppress
 log = logging.getLogger(__name__)
 
 from app.providers.base import ToolRequest
-from app.streaming.audio import FRAME_MS, silence, split_frames
 from app.streaming.emotion import detect_emotion
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.providers import AsyncLLM, AsyncSTT, AsyncTTS
 from app.streaming.vad import EnergyVAD
 
 PREROLL_FRAMES = 15  # 300 ms of audio kept from before speech_start so first words aren't clipped
-_SENTENCE = re.compile(r"(.+?[.?!।])(?:\s+|$)", re.S)
+# A sentence is complete once whitespace follows its end mark, so "18." is not cut off before ".5" arrives.
+_SENTENCE = re.compile(r"(.+?[.?!।])\s+", re.S)
+# Most replies start within this; only a slower one gets a short "హా..." so the line is not dead.
+FILLER_DELAY_SECONDS = 1.5
 
 Send = Callable[[str], Awaitable[None]]
 OnEnd = Callable[[], Awaitable[None]]
@@ -49,6 +52,7 @@ class StreamSession:
         vad: EnergyVAD | None = None,
         mode: str = "ai_agent",
         greeting: str = "",
+        opening: tuple[str, bytes] | None = None,
     ):
         self.stt, self.llm, self.tts = stt, llm, tts
         self.script, self.language, self.voice_tier = script, language, voice_tier
@@ -58,6 +62,7 @@ class StreamSession:
         self.vad = vad or EnergyVAD()
         self.mode = mode
         self.greeting = greeting
+        self.opening = opening  # (text, 8 kHz PCM) written and voiced while the phone rang
 
         self.history: list[tuple[str, str]] = []
         self.turns: list[tuple[str, str]] = []   # (role, text) in call order, for persistence
@@ -71,6 +76,7 @@ class StreamSession:
         self._response: asyncio.Task | None = None
         self._speaking_opening = False
         self._echo_until: float = 0.0  # suppress VAD until this monotonic time
+        self._caller_done_at: float | None = None  # when the caller last stopped talking
         self._filler_cache: list[bytes] = []
         self._filler_idx: int = 0
         self._filler_task: asyncio.Task | None = None
@@ -117,6 +123,12 @@ class StreamSession:
                 self.ended = True
                 if self._on_end:
                     await self._safe_end()
+            elif self.opening and self.opening[1]:
+                text, pcm = self.opening
+                print(f"[AI-AGENT] playing opening prepared while ringing: {text}")
+                self.turns.append(("agent", text))
+                self.history.append(("agent", text))
+                await self._play_pcm(pcm)
             elif self.greeting and self.greeting.strip():
                 # Speak the predefined opening greeting/question, then listen for caller
                 greet_text = self.greeting.strip()
@@ -151,20 +163,15 @@ class StreamSession:
         print(f"[Filler] {len(self._filler_cache)} phrases cached")
 
     async def _play_filler(self) -> None:
-        """Play backchannel sounds in rotation until cancelled by real TTS output."""
+        """If the reply is slow to start, play one short acknowledgement; cancelled when real speech begins."""
         if not self._filler_cache:
             return
         try:
+            await asyncio.sleep(FILLER_DELAY_SECONDS)
             pcm = self._filler_cache[self._filler_idx % len(self._filler_cache)]
             self._filler_idx += 1
             await self._safe_send(media_message(self.stream_sid, pcm))
             await asyncio.sleep(len(pcm) / (8000 * 2))
-            await asyncio.sleep(0.4)
-            if len(self._filler_cache) > 1:
-                pcm2 = self._filler_cache[self._filler_idx % len(self._filler_cache)]
-                self._filler_idx += 1
-                await self._safe_send(media_message(self.stream_sid, pcm2))
-                await asyncio.sleep(len(pcm2) / (8000 * 2))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -200,9 +207,7 @@ class StreamSession:
             if event == "speech_end" and self._in_utterance:
                 self._in_utterance = False
                 print(f"[VAD] speech_end, transcribing...")
-                # Play filler IMMEDIATELY — before waiting for Whisper (~500ms).
-                # Loop until cancelled (when real response starts) so there's
-                # no silent gap between filler end and actual TTS audio.
+                self._caller_done_at = time.monotonic()
                 if self._filler_cache and (self._filler_task is None or self._filler_task.done()):
                     self._filler_task = asyncio.create_task(self._play_filler())
                 text = (await self.stt.end_utterance()).strip()
@@ -242,27 +247,48 @@ class StreamSession:
 
         end_requested = False
         is_opening = caller_text is None
-        full_text = ""
-
-        _SENTENCE_END = frozenset('.?!।')
         max_sentences = 1 if is_opening else 2
-        sentence_count = 0
-        async for item in self.llm.stream_reply(script_for_turn, self.history, caller_text or ""):
-            if isinstance(item, ToolRequest):
-                self.actions.append(item.name)
-                if item.name == "end_call" and not is_opening:
-                    end_requested = True
-                continue
-            full_text += item
-            if len(full_text) >= 8 and full_text[-1] in _SENTENCE_END:
-                sentence_count += 1
-                if sentence_count >= max_sentences:
-                    break
+        spoken: list[str] = []
+        lines: asyncio.Queue = asyncio.Queue()
+        speaker = asyncio.create_task(self._speak_lines(lines))
+        buffer = ""
 
-        reply = full_text.strip()
-        print(f"[RESPOND] LLM reply ready at {_t.time()-t0:.2f}s: {len(reply)} chars")
+        def queue(sentence: str) -> None:
+            if not spoken:
+                print(f"[RESPOND] first sentence ready at {_t.time()-t0:.2f}s")
+                lines.put_nowait(sentence)  # voiced as a stream straight away
+            else:
+                # voiced in parallel, so it plays right after the first sentence with no dead air
+                lines.put_nowait(asyncio.create_task(self.tts.synthesize(sentence, self.language, self.voice_tier)))
+            spoken.append(sentence)
+
+        try:
+            async for item in self.llm.stream_reply(script_for_turn, self.history, caller_text or ""):
+                if isinstance(item, ToolRequest):
+                    self.actions.append(item.name)
+                    if item.name == "end_call" and not is_opening:
+                        end_requested = True
+                    continue
+                if len(spoken) >= max_sentences:
+                    continue  # keep reading: a booking or hang-up can follow the words
+                buffer += item
+                done, buffer = pop_sentences(buffer)
+                for sentence in done[: max_sentences - len(spoken)]:
+                    queue(sentence)
+            if buffer.strip() and len(spoken) < max_sentences:
+                queue(buffer.strip())
+            lines.put_nowait(None)
+            await speaker
+        except BaseException:
+            speaker.cancel()
+            while not lines.empty():
+                pending = lines.get_nowait()
+                if isinstance(pending, asyncio.Task):
+                    pending.cancel()
+            raise
+
+        reply = " ".join(spoken)
         if reply:
-            await self._speak(reply)
             self.history.append(("agent", reply))
             self.turns.append(("agent", reply))
 
@@ -271,7 +297,26 @@ class StreamSession:
             if self._on_end:
                 await self._safe_end()
 
+    async def _speak_lines(self, lines: asyncio.Queue) -> None:
+        """The first sentence streams as it is voiced; later ones were voiced in parallel and follow at once."""
+        while (item := await lines.get()) is not None:
+            if isinstance(item, str):
+                await self._speak(item)
+                continue
+            try:
+                pcm = await item
+            except Exception as e:
+                print(f"[TTS] FAILED: {e}")
+                continue
+            await self._play_pcm(pcm)
+
+    def _log_reply_gap(self) -> None:
+        if self._caller_done_at is not None:
+            print(f"[LATENCY] caller stopped -> reply audio: {time.monotonic() - self._caller_done_at:.2f}s")
+            self._caller_done_at = None
+
     async def _speak(self, text: str) -> None:
+        """Voice text as one stream and play it as it arrives."""
         import time
         t0 = time.time()
         print(f"[TTS] synthesize start: {len(text)} chars")
@@ -279,59 +324,58 @@ class StreamSession:
         frame_dur = frame_bytes / (8000 * 2)
         first_sent = False
         total_bytes = 0
-        # 150ms silence between sentences for natural micro-pauses
-        pause_pcm = silence(150)
-
-        # Split into sentences and speak each with a micro-pause between them
-        sentences = [s.strip() for s in re.split(r'(?<=[.?!।])\s+', text) if s.strip()]
-        if not sentences:
-            sentences = [text]
 
         try:
-            for s_idx, sentence in enumerate(sentences):
-                # Insert micro-pause between sentences (not before the first)
-                if s_idx > 0 and pause_pcm:
-                    await self._safe_send(media_message(self.stream_sid, pause_pcm))
-                    await asyncio.sleep(0.15)
-
-                if hasattr(self.tts, "stream_synthesize"):
-                    buf = b""
-                    async for pcm_chunk in self.tts.stream_synthesize(sentence, self.language, self.voice_tier):
-                        buf += pcm_chunk
-                        while len(buf) >= frame_bytes:
-                            frame = buf[:frame_bytes]
-                            buf = buf[frame_bytes:]
-                            if not first_sent:
-                                if self._filler_task and not self._filler_task.done():
-                                    self._filler_task.cancel()
-                                    with suppress(asyncio.CancelledError, Exception):
-                                        await self._filler_task
-                                self._filler_task = None
-                            await self._safe_send(media_message(self.stream_sid, frame))
-                            if not first_sent:
-                                print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
-                                first_sent = True
-                            total_bytes += len(frame)
-                            await asyncio.sleep(frame_dur)
-                    if buf:
-                        await self._safe_send(media_message(self.stream_sid, buf))
-                        total_bytes += len(buf)
-                        await asyncio.sleep(len(buf) / (8000 * 2))
-                else:
-                    audio = await self.tts.synthesize(sentence, self.language, self.voice_tier)
-                    chunks = [audio[i:i + frame_bytes] for i in range(0, len(audio), frame_bytes)]
-                    for chunk in chunks:
-                        await self._safe_send(media_message(self.stream_sid, chunk))
+            if hasattr(self.tts, "stream_synthesize"):
+                buf = b""
+                async for pcm_chunk in self.tts.stream_synthesize(text, self.language, self.voice_tier):
+                    buf += pcm_chunk
+                    while len(buf) >= frame_bytes:
+                        frame = buf[:frame_bytes]
+                        buf = buf[frame_bytes:]
+                        if not first_sent:
+                            if self._filler_task and not self._filler_task.done():
+                                self._filler_task.cancel()
+                                with suppress(asyncio.CancelledError, Exception):
+                                    await self._filler_task
+                            self._filler_task = None
+                        await self._safe_send(media_message(self.stream_sid, frame))
                         if not first_sent:
                             print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
+                            self._log_reply_gap()
                             first_sent = True
-                        await asyncio.sleep(len(chunk) / (8000 * 2))
-                    total_bytes += len(audio)
+                        total_bytes += len(frame)
+                        await asyncio.sleep(frame_dur)
+                if buf:
+                    await self._safe_send(media_message(self.stream_sid, buf))
+                    total_bytes += len(buf)
+                    await asyncio.sleep(len(buf) / (8000 * 2))
+            else:
+                audio = await self.tts.synthesize(text, self.language, self.voice_tier)
+                chunks = [audio[i:i + frame_bytes] for i in range(0, len(audio), frame_bytes)]
+                for chunk in chunks:
+                    await self._safe_send(media_message(self.stream_sid, chunk))
+                    if not first_sent:
+                        print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
+                        self._log_reply_gap()
+                        first_sent = True
+                    await asyncio.sleep(len(chunk) / (8000 * 2))
+                total_bytes += len(audio)
         except Exception as e:
             print(f"[TTS] FAILED: {e}")
             return
 
-        print(f"[TTS] done in {time.time()-t0:.2f}s: {total_bytes} bytes, {len(sentences)} sentence(s)")
+        print(f"[TTS] done in {time.time()-t0:.2f}s: {total_bytes} bytes")
+        import time as _time
+        self._echo_until = _time.monotonic() + 0.2
+
+    async def _play_pcm(self, pcm: bytes) -> None:
+        """Send ready-made audio at the pace the phone plays it."""
+        frame_bytes = 8000 * 2 // 5
+        for i in range(0, len(pcm), frame_bytes):
+            chunk = pcm[i:i + frame_bytes]
+            await self._safe_send(media_message(self.stream_sid, chunk))
+            await asyncio.sleep(len(chunk) / (8000 * 2))
         import time as _time
         self._echo_until = _time.monotonic() + 0.2
 

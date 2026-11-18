@@ -20,7 +20,7 @@ from app.streaming.memory import load_memory, memory_to_prompt, update_memory
 from app.streaming.protocol import parse_event
 from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
 from app.streaming.recorded import RecordedAudioSession, _to_pcm_8k
-from app.streaming.session import StreamSession
+from app.streaming.session import StreamSession, pop_sentences
 from datetime import datetime
 
 router = APIRouter()
@@ -139,6 +139,50 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
     return session
 
 
+def _classic_script(ctx: CallContext) -> str:
+    persona_settings = {k: v for k, v in _persona_settings(ctx).items() if k != "language_style"}
+    return "\n\n".join(part for part in (
+        ctx.employee.script,
+        call_details(ctx.caller_name, ctx.caller_notes, _local_time(ctx.timezone)),
+        "\n".join(persona(**persona_settings) + _caller_line(ctx.caller_name)),
+        ctx.memory_context,
+    ) if part)
+
+
+async def _prepare_classic(ctx: CallContext) -> dict:
+    """Write and voice the opening line while the phone rings, so the agent speaks the moment it is answered."""
+    stt, llm, tts = factory.build_providers(ctx.employee, extras=ctx.extras)
+    text = ctx.greeting.strip()
+    if not text:
+        written = ""
+        async for item in llm.stream_reply(_classic_script(ctx), [], ""):
+            if isinstance(item, str):
+                written += item
+        sentences, rest = pop_sentences(written + " ")
+        text = (sentences[0] if sentences else rest).strip()
+    pcm = await tts.synthesize(text, ctx.employee.language, ctx.employee.voice_tier.value) if text else b""
+    print(f"[WS] opening line ready before pickup: {text!r}")
+    return {"type": "classic", "ctx": ctx, "providers": (stt, llm, tts), "opening": (text, pcm)}
+
+
+def _stream_session(ctx: CallContext, stream_sid: str, send, end, providers=None, opening=None) -> StreamSession:
+    stt, llm, tts = providers or factory.build_providers(ctx.employee, extras=ctx.extras)
+    return StreamSession(
+        stt=stt,
+        llm=llm,
+        tts=tts,
+        script=_classic_script(ctx),
+        language=ctx.employee.language,
+        voice_tier=ctx.employee.voice_tier.value,
+        stream_sid=stream_sid,
+        send=send,
+        on_end=end,
+        mode=ctx.mode,
+        greeting=ctx.greeting,
+        opening=opening,
+    )
+
+
 def prepare_call(call_id: int) -> None:
     """The phone is ringing or was just answered: get the agent ready to speak before the audio stream connects."""
     if call_id in _prepared:
@@ -156,7 +200,14 @@ def prepare_call(call_id: int) -> None:
                 print(f"[WS] prepared recorded audio: {len(pcm)} bytes PCM")
                 return {"type": "recorded", "pcm": pcm, "filename": audio.get("filename", "greeting.mp3")}
             return None
-        return _start_realtime(ctx)
+        realtime = _start_realtime(ctx)
+        if realtime is not None or ctx is None or ctx.mode == "broadcast":
+            return realtime
+        try:
+            return await _prepare_classic(ctx)
+        except Exception as e:
+            print(f"[WS] could not prepare the opening line ({type(e).__name__}: {e}); it will be made on pickup")
+            return None
 
     task = asyncio.create_task(prepare())
     _prepared[call_id] = task
@@ -244,6 +295,12 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         await session.start()
         return session
 
+    if isinstance(result, dict) and result.get("type") == "classic":
+        session = _stream_session(result["ctx"], stream_sid, send, end, result["providers"], result["opening"])
+        holder["session"] = session
+        await session.start()
+        return session
+
     realtime = result if isinstance(result, RealtimeSession) else None
 
     ctx: CallContext | None = None
@@ -280,25 +337,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
     ctx = ctx or _load_context(call_id)
     if ctx is None:
         raise RuntimeError(f"unknown call {call_id}")
-    stt, llm, tts = factory.build_providers(ctx.employee, extras=ctx.extras)
-    session = StreamSession(
-        stt=stt,
-        llm=llm,
-        tts=tts,
-        script="\n\n".join(part for part in (
-            ctx.employee.script,
-            call_details(ctx.caller_name, ctx.caller_notes, _local_time(ctx.timezone)),
-            "\n".join(persona(**{k: v for k, v in _persona_settings(ctx).items() if k != "language_style"}) + _caller_line(ctx.caller_name)),
-            ctx.memory_context,
-        ) if part),
-        language=ctx.employee.language,
-        voice_tier=ctx.employee.voice_tier.value,
-        stream_sid=stream_sid,
-        send=send,
-        on_end=end,
-        mode=ctx.mode,
-        greeting=ctx.greeting,
-    )
+    session = _stream_session(ctx, stream_sid, send, end)
     holder["session"] = session
     await session.start()
     return session

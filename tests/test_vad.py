@@ -27,6 +27,12 @@ def test_speech_then_silence_gives_start_and_end():
     assert events.index("speech_start") < events.index("speech_end")
 
 
+def test_caller_who_talks_straight_away_is_heard_every_time():
+    vad = EnergyVAD()
+    events = run(vad, ([LOUD] * 20 + [QUIET] * 30) * 2)
+    assert events.count("speech_start") == 2 and events.count("speech_end") == 2
+
+
 def test_brief_pause_does_not_end_utterance():
     vad = EnergyVAD(end_silence_ms=700)
     events = run(vad, [LOUD] * 20 + [QUIET] * 10 + [LOUD] * 20)  # 200 ms pause
