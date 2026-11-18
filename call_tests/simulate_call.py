@@ -128,7 +128,8 @@ class Line:
 
     def agent_done(self) -> bool:
         now = time.monotonic()
-        return self.chunks > 0 and now > self.play_until + 0.4 and now - self.last_chunk > 0.6
+        # A person waits about 1.5 s after a short "హా..." before deciding the agent is done.
+        return self.chunks > 0 and now > self.play_until + 0.4 and now - self.last_chunk > 1.5
 
 
 async def caller_audio() -> list[bytes]:
@@ -209,7 +210,9 @@ async def run(label: str, tier: VoiceTier) -> dict:
             await ws.send(json.dumps({"event": "stop"}))
         line.closed = True
         pump_task.cancel()
-        await asyncio.gather(recv_task, return_exceptions=True)
+        done, _ = await asyncio.wait({recv_task}, timeout=5)  # don't hang if the server never closes the socket
+        if not done:
+            recv_task.cancel()
 
     await asyncio.sleep(1.0)  # let the server persist the transcript
     with SessionLocal() as db:
