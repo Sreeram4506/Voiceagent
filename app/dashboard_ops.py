@@ -1444,6 +1444,9 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
         }
 
 
+EXCEL_CAMPAIGN_LINES = 40  # calls at once for an Excel campaign, matching the auto-dialer's cap
+
+
 @ops.post("/api/employees/{employee_id}/excel-campaign")
 async def employee_excel_campaign(
     request: Request,
@@ -1575,6 +1578,7 @@ async def employee_excel_campaign(
                         amount_paise=100_000, note="auto-topup",
                     ))
                 emp2.paused = False
+                emp2.max_concurrency = max(emp2.max_concurrency, EXCEL_CAMPAIGN_LINES)
                 # Widen calling window to full day for user-triggered campaigns
                 emp2.window_start = dtime(0, 0)
                 emp2.window_end = dtime(23, 59)

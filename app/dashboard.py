@@ -15,6 +15,7 @@ from app.models import AIEmployee, Call, CallDirection, CallStatus, CallTurn, Co
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 # Per-tenant auto-call state  (tenant_id -> value)
+STUCK_CALL_MINUTES = 30  # no real campaign call lasts this long
 _auto_call_active: dict[int, bool] = {}
 _auto_call_stats: dict[int, dict] = {}
 
@@ -387,7 +388,17 @@ def _auto_call_loop(tenant_id: int):
                 ).all()
                 for c in stale_dialing:
                     c.status = CallStatus.NO_ANSWER
-                if stale_dialing:
+                # A call "connected" this long never sent its hang-up callback; free the line it holds.
+                stuck = db.query(Call).filter(
+                    Call.tenant_id == tenant_id,
+                    Call.status == CallStatus.CONNECTED,
+                    Call.started_at < datetime.now(timezone.utc) - timedelta(minutes=STUCK_CALL_MINUTES),
+                ).all()
+                for c in stuck:
+                    c.status = CallStatus.FAILED
+                if stuck:
+                    print(f"[AUTO-CALL][tid={tenant_id}] freed {len(stuck)} lines held by calls stuck as connected")
+                if stale_dialing or stuck:
                     db.commit()
 
                 in_flight = db.query(Call).filter(
@@ -438,6 +449,15 @@ def _auto_call_loop(tenant_id: int):
     engine.dispose()
 
 
+def _open_calling_hours(tid: int) -> None:
+    from app.services.scheduler import FULL_DAY
+
+    with SessionLocal() as db:
+        for emp in db.query(AIEmployee).filter(AIEmployee.tenant_id == tid):
+            emp.window_start, emp.window_end = FULL_DAY  # calls may go out at any hour
+        db.commit()
+
+
 def _get_tid_from_request_or_first(request=None) -> int:
     if request is not None:
         from app.auth import get_session_data
@@ -457,12 +477,7 @@ def start_auto_call(request: Request):
     if _auto_call_active.get(tid):
         stats = _auto_call_stats.get(tid, {"total_dialed": 0, "remaining": 0})
         return {"status": "already_running", **stats}
-    from app.services.scheduler import FULL_DAY
-
-    with SessionLocal() as db:
-        for emp in db.query(AIEmployee).filter(AIEmployee.tenant_id == tid):
-            emp.window_start, emp.window_end = FULL_DAY  # calls may go out at any hour
-        db.commit()
+    _open_calling_hours(tid)
     _auto_call_active[tid] = True
     t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
     t.start()

@@ -51,6 +51,32 @@ def test_launch_opens_calling_to_any_hour_and_resets_attempts(client):
         assert {(lead.status, lead.attempts) for lead in leads} == {(LeadStatus.NEW, 0)}
 
 
+def test_blocked_contacts_do_not_starve_a_newer_campaign(session):
+    from app.providers.mock import MockTelephony
+    from app.services.compliance import InMemoryDNDRegistry
+    from app.services.scheduler import dispatch_due
+    from app.models import Tenant
+
+    tenant = Tenant(name="T", api_key_hash="h-starve", webhook_secret="s")
+    session.add(tenant)
+    session.flush()
+    blocked = AIEmployee(tenant_id=tenant.id, name="Old", script="", phone_number=None, max_concurrency=40)
+    ready = AIEmployee(tenant_id=tenant.id, name="New", script="", phone_number="+914000000000", max_concurrency=40,
+                       window_start=time(0, 0), window_end=time(23, 59))
+    session.add_all([blocked, ready, LedgerEntry(tenant_id=tenant.id, kind=LedgerKind.TOPUP, amount_paise=10_000)])
+    session.flush()
+    old = datetime.utcnow() - timedelta(hours=1)
+    for n in range(5):  # older contacts whose agent has no phone number: never dialable
+        session.add(Lead(tenant_id=tenant.id, employee_id=blocked.id, phone_e164=f"+9188888000{n}",
+                         status=LeadStatus.NEW, next_attempt_at=old))
+    session.add(Lead(tenant_id=tenant.id, employee_id=ready.id, phone_e164="+917777700000",
+                     status=LeadStatus.NEW, next_attempt_at=datetime.utcnow()))
+    session.commit()
+    report = dispatch_due(session, telephony=MockTelephony(), dnd=InMemoryDNDRegistry(), now=datetime.now(timezone.utc),
+                          callback_url="http://x/status", retry_delay_minutes=30, batch_size=2)
+    assert len(report.dialed) == 1 and len(report.skipped) == 5
+
+
 def test_outside_calling_hours_is_explained_in_plain_words():
     emp = AIEmployee(tenant_id=1, name="A", script="", window_start=time(9, 0), window_end=time(20, 0), timezone="Asia/Kolkata")
     assert explain_wait("outside_calling_window", emp).startswith("outside calling hours (09:00-20:00 Asia/Kolkata)")

@@ -33,11 +33,14 @@ def dispatch_due(
         .where(Lead.status.in_([LeadStatus.NEW, LeadStatus.QUEUED]))
         .where(Lead.next_attempt_at <= now)
         .order_by(Lead.next_attempt_at)
-        .limit(batch_size)
+        # Look past contacts that can't be dialed now, so they don't starve newer campaigns.
+        .limit(max(batch_size * LOOKAHEAD_FACTOR, MIN_LOOKAHEAD))
     ).all()
 
     report = DispatchReport(dialed=[], skipped={})
     for lead in leads:
+        if len(report.dialed) >= batch_size:
+            break
         employee = session.get(AIEmployee, lead.employee_id)
         tenant = session.get(Tenant, lead.tenant_id)
 
@@ -120,6 +123,9 @@ def dispatch_due(
     session.flush()
     return report
 
+
+LOOKAHEAD_FACTOR = 10
+MIN_LOOKAHEAD = 200
 
 # Calling window for campaigns: the owner wants calls to go out at any hour.
 FULL_DAY = (time(0, 0), time(23, 59))
