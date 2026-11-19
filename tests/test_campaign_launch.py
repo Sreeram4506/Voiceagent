@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 
 from app.db import SessionLocal
 from app.models import AIEmployee, ContactList, Lead, LeadStatus, LedgerEntry, LedgerKind
-from app.services.scheduler import dial_blocker, explain_wait
+from app.services.scheduler import FULL_DAY, dial_blocker, explain_wait
 
 
 def login(client):
@@ -34,7 +34,7 @@ def agent_with_list(client, *, window: tuple[time, time], attempts: int) -> tupl
         return eid, cl.id, emp.tenant_id
 
 
-def test_launch_outside_calling_hours_says_so_and_resets_attempts(client):
+def test_launch_opens_calling_to_any_hour_and_resets_attempts(client):
     login(client)
     now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     closed = (time((now_ist.hour + 2) % 24, 0), time((now_ist.hour + 3) % 24, 0))  # a window that is not now
@@ -44,10 +44,16 @@ def test_launch_outside_calling_hours_says_so_and_resets_attempts(client):
         r = client.post(f"/dashboard/api/campaigns/{cid}/launch").json()
     finally:
         stop_dialer(tid)
-    assert r["ok"] and "outside calling hours" in r["warning"]
+    assert r["ok"] and r["warning"] is None
     with SessionLocal() as db:
+        assert (db.get(AIEmployee, eid).window_start, db.get(AIEmployee, eid).window_end) == FULL_DAY
         leads = db.query(Lead).filter(Lead.source == f"list:{list_id}").all()
         assert {(lead.status, lead.attempts) for lead in leads} == {(LeadStatus.NEW, 0)}
+
+
+def test_outside_calling_hours_is_explained_in_plain_words():
+    emp = AIEmployee(tenant_id=1, name="A", script="", window_start=time(9, 0), window_end=time(20, 0), timezone="Asia/Kolkata")
+    assert explain_wait("outside_calling_window", emp).startswith("outside calling hours (09:00-20:00 Asia/Kolkata)")
 
 
 def test_launch_with_nobody_to_call_says_so(client):

@@ -425,7 +425,7 @@ def resume_campaign(request: Request, campaign_id: int):
 
 @ops.post("/api/campaigns/{campaign_id}/launch")
 def launch_campaign(request: Request, campaign_id: int):
-    from app.services.scheduler import dial_blocker, explain_wait
+    from app.services.scheduler import FULL_DAY, dial_blocker, explain_wait
 
     tid = _require_tid(request)
 
@@ -442,6 +442,8 @@ def launch_campaign(request: Request, campaign_id: int):
             if c.greeting:
                 emp.script = c.greeting + "\n\n" + (emp.script or "")
             emp.language = c.language or emp.language
+            # The owner wants campaigns to call at any hour, like Excel campaigns already do.
+            emp.window_start, emp.window_end = FULL_DAY
         if c.contact_list_id:
             # A launch starts the list afresh: earlier test runs must not leave contacts at max attempts.
             db.query(Lead).filter(

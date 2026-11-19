@@ -1,7 +1,7 @@
 """Picks due leads and places calls, respecting compliance, concurrency, and each agent's ExoPhone."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -120,6 +120,9 @@ def dispatch_due(
     session.flush()
     return report
 
+
+# Calling window for campaigns: the owner wants calls to go out at any hour.
+FULL_DAY = (time(0, 0), time(23, 59))
 
 _WAIT_REASONS = {
     "outside_calling_window": "outside calling hours ({window}); calls start automatically when the window opens",

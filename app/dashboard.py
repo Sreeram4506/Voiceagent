@@ -457,6 +457,12 @@ def start_auto_call(request: Request):
     if _auto_call_active.get(tid):
         stats = _auto_call_stats.get(tid, {"total_dialed": 0, "remaining": 0})
         return {"status": "already_running", **stats}
+    from app.services.scheduler import FULL_DAY
+
+    with SessionLocal() as db:
+        for emp in db.query(AIEmployee).filter(AIEmployee.tenant_id == tid):
+            emp.window_start, emp.window_end = FULL_DAY  # calls may go out at any hour
+        db.commit()
     _auto_call_active[tid] = True
     t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
     t.start()
