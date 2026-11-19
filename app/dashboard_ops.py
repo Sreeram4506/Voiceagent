@@ -398,10 +398,9 @@ def pause_campaign(request: Request, campaign_id: int):
         c = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.tenant_id == tid).first()
         if not c:
             return {"error": "Campaign not found"}
+        # Only this campaign stops: the dialer skips contacts of campaigns that aren't running,
+        # so the agent stays free for its other campaigns.
         c.status = CampaignStatus.PAUSED
-        emp = db.get(AIEmployee, c.employee_id) if c.employee_id else _first_emp(db, tid)
-        if emp:
-            emp.paused = True
         _log(db, tid, "campaign.paused", c.name)
         db.commit()
         return {"ok": True, "status": c.status.value}

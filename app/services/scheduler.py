@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from datetime import datetime, time
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import AIEmployee, Call, CallDirection, CallStatus, Campaign, Lead, LeadStatus, Tenant
+from app.models import AIEmployee, Call, CallDirection, CallStatus, Campaign, CampaignStatus, Lead, LeadStatus, Tenant
 from app.providers.base import TelephonyProvider
 from app.services.billing import balance_paise
 from app.services.compliance import DNDRegistry, check_lead, within_calling_window
@@ -30,8 +30,11 @@ def dispatch_due(
 ) -> DispatchReport:
     leads = session.scalars(
         select(Lead)
+        .outerjoin(Campaign, Lead.campaign_id == Campaign.id)
         .where(Lead.status.in_([LeadStatus.NEW, LeadStatus.QUEUED]))
         .where(Lead.next_attempt_at <= now)
+        # A campaign's contacts are dialed only while it runs; contacts outside any campaign as before.
+        .where(or_(Lead.campaign_id.is_(None), Campaign.status == CampaignStatus.RUNNING))
         .order_by(Lead.next_attempt_at)
         # Look past contacts that can't be dialed now, so they don't starve newer campaigns.
         .limit(max(batch_size * LOOKAHEAD_FACTOR, MIN_LOOKAHEAD))

@@ -77,6 +77,43 @@ def test_blocked_contacts_do_not_starve_a_newer_campaign(session):
     assert len(report.dialed) == 1 and len(report.skipped) == 5
 
 
+def test_only_contacts_of_running_campaigns_are_dialed(session):
+    from app.models import Campaign, CampaignStatus, Tenant
+    from app.providers.mock import MockTelephony
+    from app.services.compliance import InMemoryDNDRegistry
+    from app.services.scheduler import dispatch_due
+
+    tenant = Tenant(name="T", api_key_hash="h-running", webhook_secret="s")
+    session.add(tenant)
+    session.flush()
+    agent = AIEmployee(tenant_id=tenant.id, name="A", script="", phone_number="+914000000000", max_concurrency=40,
+                       window_start=time(0, 0), window_end=time(23, 59))
+    session.add_all([agent, LedgerEntry(tenant_id=tenant.id, kind=LedgerKind.TOPUP, amount_paise=10_000)])
+    session.flush()
+    live = Campaign(tenant_id=tenant.id, employee_id=agent.id, name="Live", status=CampaignStatus.RUNNING)
+    paused = Campaign(tenant_id=tenant.id, employee_id=agent.id, name="Old", status=CampaignStatus.PAUSED)
+    session.add_all([live, paused])
+    session.flush()
+    due = datetime.utcnow() - timedelta(minutes=1)
+    for phone, campaign in (("+917000000001", live), ("+917000000002", paused), ("+917000000003", None)):
+        session.add(Lead(tenant_id=tenant.id, employee_id=agent.id, phone_e164=phone, status=LeadStatus.NEW,
+                         campaign_id=campaign.id if campaign else None, next_attempt_at=due))
+    session.commit()
+    report = dispatch_due(session, telephony=MockTelephony(), dnd=InMemoryDNDRegistry(), now=datetime.now(timezone.utc),
+                          callback_url="http://x/status", retry_delay_minutes=30)
+    dialed = {session.get(Lead, lead_id).phone_e164 for lead_id in report.dialed}
+    assert dialed == {"+917000000001", "+917000000003"}  # the paused campaign's contact is left alone
+
+
+def test_pausing_one_campaign_leaves_the_agent_free_for_others(client):
+    login(client)
+    eid = client.post("/dashboard/api/employees", json={"name": "Suma"}).json()["id"]
+    old = client.post("/dashboard/api/campaigns", json={"name": "Old", "employee_id": eid, "status": "running"}).json()["id"]
+    assert client.post(f"/dashboard/api/campaigns/{old}/pause").json()["status"] == "paused"
+    with SessionLocal() as db:
+        assert not db.get(AIEmployee, eid).paused
+
+
 def test_outside_calling_hours_is_explained_in_plain_words():
     emp = AIEmployee(tenant_id=1, name="A", script="", window_start=time(9, 0), window_end=time(20, 0), timezone="Asia/Kolkata")
     assert explain_wait("outside_calling_window", emp).startswith("outside calling hours (09:00-20:00 Asia/Kolkata)")
