@@ -628,7 +628,7 @@ async function pauseCampaign(id) {
 }
 async function launchCampaign(id) {
   const r = await api(`/api/campaigns/${id}/launch`, {method:'POST'});
-  if(!r.error) { toast('Campaign launched!'); renderDashboard(); }
+  if(!r.error) { toast(r.warning ? `Campaign launched, but ${r.warning}` : 'Campaign launched!', !r.warning); renderDashboard(); }
 }
 async function pauseAll() {
   const r = await api('/api/pause-all', {method:'POST'});
@@ -996,8 +996,8 @@ async function _wizardSubmit() {
   const r = await api('/api/campaigns', {method:'POST', body:JSON.stringify(payload)});
   if(r.error) { toast('Error: '+r.error, false); return; }
   if(!isDraft) {
-    await api(`/api/campaigns/${r.id}/launch`, {method:'POST'});
-    toast('Campaign launched! 🚀');
+    const launch = await api(`/api/campaigns/${r.id}/launch`, {method:'POST'});
+    toast(launch.warning ? `Campaign launched, but ${launch.warning}` : 'Campaign launched! 🚀', !launch.warning);
   } else {
     toast('Campaign saved as draft');
   }
@@ -3167,7 +3167,8 @@ async function doExcelCampaign(employeeId) {
     if (res.status === 401) { location.href = '/login'; return; }
     const r = await res.json();
     if (r.ok) {
-      toast(`Campaign launched! ${r.added} contacts queued${r.skipped ? `, ${r.skipped} skipped` : ''}.`);
+      toast(r.warning ? `Nothing to call: ${r.warning}.`
+        : `Campaign launched! ${r.added} contacts queued${r.skipped ? `, ${r.skipped} skipped` : ''}.`, !r.warning);
       hideModal();
       go('all-campaigns');
     } else {

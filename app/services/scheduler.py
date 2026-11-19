@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import AIEmployee, Call, CallDirection, CallStatus, Campaign, Lead, LeadStatus, Tenant
 from app.providers.base import TelephonyProvider
 from app.services.billing import balance_paise
-from app.services.compliance import DNDRegistry, check_lead
+from app.services.compliance import DNDRegistry, check_lead, within_calling_window
 from app.streaming.ws import set_call_mode
 
 
@@ -119,6 +119,43 @@ def dispatch_due(
 
     session.flush()
     return report
+
+
+_WAIT_REASONS = {
+    "outside_calling_window": "outside calling hours ({window}); calls start automatically when the window opens",
+    "no_credits": "no credits left; add credits to start dialing",
+    "no_phone_number_assigned": "the agent has no phone number assigned",
+    "concurrency_limit": "all lines are busy; waiting for calls to finish",
+    "max_attempts_reached": "these contacts have used all their call attempts",
+    "too_soon_since_last_call": "waiting for the retry gap since the last call",
+    "campaign_paused": "the agent is paused",
+    "dnd_registry": "the numbers are on the Do-Not-Call list",
+    "missing_employee_or_tenant": "the contacts have no agent assigned",
+    "no_contacts": "there are no contacts to call",
+}
+
+
+def explain_wait(reason: str, employee: AIEmployee | None = None) -> str:
+    """A dispatch skip reason in plain words, for the dashboard and logs."""
+    window = "9:00-20:00"
+    if employee is not None:
+        window = f"{employee.window_start:%H:%M}-{employee.window_end:%H:%M} {employee.timezone}"
+    return _WAIT_REASONS.get(reason, reason.replace("_", " ")).format(window=window)
+
+
+def dial_blocker(session: Session, employee: AIEmployee | None, now: datetime) -> str | None:
+    """Why this agent's calls cannot start right now, in plain words, or None when they can."""
+    if employee is None:
+        return explain_wait("missing_employee_or_tenant")
+    if employee.paused:
+        return explain_wait("campaign_paused")
+    if not employee.phone_number:
+        return explain_wait("no_phone_number_assigned")
+    if balance_paise(session, employee.tenant_id) <= 0:
+        return explain_wait("no_credits")
+    if not within_calling_window(employee, now):
+        return explain_wait("outside_calling_window", employee)
+    return None
 
 
 def employee_for_number(session: Session, phone_number: str) -> AIEmployee | None:

@@ -337,6 +337,21 @@ def dispatch_all(request: Request):
         return {"dialed": report.dialed, "skipped": report.skipped}
 
 
+def _note_waiting(tenant_id: int, report, employee) -> None:
+    """Remember, and log once, why contacts are waiting when nothing could be dialed."""
+    from collections import Counter
+
+    from app.services.scheduler import explain_wait
+
+    waiting = ""
+    if not report.dialed and report.skipped:
+        reason = Counter(report.skipped.values()).most_common(1)[0][0]
+        waiting = explain_wait(reason, employee)
+        if waiting != _auto_call_stats[tenant_id].get("waiting"):
+            print(f"[AUTO-CALL][tid={tenant_id}] {len(report.skipped)} contacts waiting: {waiting}")
+    _auto_call_stats[tenant_id]["waiting"] = waiting
+
+
 def _auto_call_loop(tenant_id: int):
     import os
     import time
@@ -409,6 +424,7 @@ def _auto_call_loop(tenant_id: int):
                     db.commit()
                     _auto_call_stats[tenant_id]["total_dialed"] += len(report.dialed)
                     did_dial = len(report.dialed) > 0
+                    _note_waiting(tenant_id, report, emp)
         except Exception as e:
             print(f"[AUTO-CALL][tid={tenant_id}] error: {e}")
 
@@ -472,6 +488,7 @@ def auto_call_status(request: Request):
         "remaining": remaining,
         "in_flight": in_flight,
         "total_dialed": stats.get("total_dialed", 0),
+        "waiting": stats.get("waiting", ""),
     }
 
 

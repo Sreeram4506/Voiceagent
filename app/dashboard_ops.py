@@ -425,6 +425,8 @@ def resume_campaign(request: Request, campaign_id: int):
 
 @ops.post("/api/campaigns/{campaign_id}/launch")
 def launch_campaign(request: Request, campaign_id: int):
+    from app.services.scheduler import dial_blocker, explain_wait
+
     tid = _require_tid(request)
 
     with SessionLocal() as db:
@@ -441,10 +443,16 @@ def launch_campaign(request: Request, campaign_id: int):
                 emp.script = c.greeting + "\n\n" + (emp.script or "")
             emp.language = c.language or emp.language
         if c.contact_list_id:
-            db.query(Lead).filter(Lead.tenant_id == tid, Lead.source == f"list:{c.contact_list_id}").update(
-                {"status": LeadStatus.NEW, "campaign_id": c.id, "next_attempt_at": _now()},
+            # A launch starts the list afresh: earlier test runs must not leave contacts at max attempts.
+            db.query(Lead).filter(
+                Lead.tenant_id == tid, Lead.source == f"list:{c.contact_list_id}", Lead.status != LeadStatus.DNC
+            ).update(
+                {"status": LeadStatus.NEW, "campaign_id": c.id, "next_attempt_at": _now(),
+                 "attempts": 0, "last_called_at": None},
                 synchronize_session=False,
             )
+        queued = db.query(Lead).filter(Lead.tenant_id == tid, Lead.status == LeadStatus.NEW).count()
+        warning = explain_wait("no_contacts") if not queued else dial_blocker(db, emp, datetime.now(timezone.utc))
         _log(db, tid, "campaign.launched", c.name)
         db.commit()
 
@@ -460,7 +468,7 @@ def launch_campaign(request: Request, campaign_id: int):
         result = {"status": "started", "remaining": remaining}
     else:
         result = {"status": "already_running"}
-    return {"ok": True, "autocall": result}
+    return {"ok": True, "autocall": result, "warning": warning}
 
 
 @ops.get("/api/contact-lists")
@@ -1501,6 +1509,7 @@ async def employee_excel_campaign(
 
         added = 0
         skipped = 0
+        seen: set[str] = set()
         for row in rows_raw[1:]:
             if not row or len(row) <= phone_col:
                 continue
@@ -1511,12 +1520,25 @@ async def employee_excel_campaign(
             if len(phone) < 12:
                 skipped += 1
                 continue
-            if db.query(Lead).filter(Lead.tenant_id == tid, Lead.phone_e164 == phone).first():
+            if phone in seen:
                 skipped += 1
                 continue
+            seen.add(phone)
             name = str(row[name_col]).strip() if name_col is not None and len(row) > name_col and row[name_col] else None
             if name and name.lower() in ("name", "none", ""):
                 name = None
+            existing = db.query(Lead).filter(Lead.tenant_id == tid, Lead.phone_e164 == phone).first()
+            if existing:
+                if existing.status == LeadStatus.DNC:
+                    skipped += 1
+                    continue
+                # Known from an earlier list or test call: queue it again for this campaign instead of dropping it.
+                existing.employee_id, existing.campaign_id, existing.source = employee_id, c.id, f"list:{cl.id}"
+                existing.status, existing.attempts, existing.last_called_at = LeadStatus.NEW, 0, None
+                existing.next_attempt_at = _now()
+                existing.name = name or existing.name
+                added += 1
+                continue
             db.add(Lead(
                 tenant_id=tid,
                 employee_id=employee_id,
@@ -1564,7 +1586,8 @@ async def employee_excel_campaign(
         t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
         t.start()
 
-    return {"ok": True, "campaign_id": campaign_id, "added": added, "skipped": skipped}
+    warning = None if added else "no new contacts found in the file (only blanks, invalid numbers or Do-Not-Call numbers)"
+    return {"ok": True, "campaign_id": campaign_id, "added": added, "skipped": skipped, "warning": warning}
 
 
 @ops.get("/api/analytics")
