@@ -56,3 +56,5 @@ tts_training/data/
 tts_training/output/
 piper_work/
 models/
+
+.venv/
