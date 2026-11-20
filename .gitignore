@@ -50,3 +50,9 @@ indicf5_repo/
 # Simulated call recordings
 call_tests/*.wav
 call_tests/*.json
+
+# Voice training: recordings, transcripts, samples and downloaded voices stay out of git
+tts_training/data/
+tts_training/output/
+piper_work/
+models/

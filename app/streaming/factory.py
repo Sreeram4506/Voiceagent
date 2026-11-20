@@ -6,6 +6,7 @@ and can be forced with VA_VOICE_PIPELINE=classic to save cost.
 
 TTS priority:
   voice_clone tier       → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
+  te + VA_TTS_ENGINE=piper → Piper, our own Telugu voice on CPU (PIPER_MODEL / PIPER_VOICE)
   te / hi / en / ta / kn → EdgeTTS (Microsoft Neural, free, native pronunciation)
   Other languages        → OpenAI tts-1 → Piper (offline) → Mock
 
@@ -46,6 +47,18 @@ def _build_tts(employee, openai_key, extras=None):
             return provider
         except Exception as e:
             print(f"[Factory] XTTS unavailable ({e}), falling back to EdgeTTS")
+
+    # Our own Piper Telugu voice, on the server's CPU (VA_TTS_ENGINE=piper). Edge stays the default until it wins.
+    if lang == "te" and os.getenv("VA_TTS_ENGINE", "edge").strip().lower() == "piper":
+        try:
+            from app.streaming.piper_tts import PIPER_LENGTH_SCALE, PiperTTS, model_path
+            if model_path():
+                length_scale = round(PIPER_LENGTH_SCALE / speech_rate, 3)  # the agent's speech rate on Piper's base pace
+                print(f"[Factory] Piper TTS lang=te voice={model_path().name} length_scale={length_scale}")
+                return PiperTTS(length_scale=length_scale)
+            print("[Factory] VA_TTS_ENGINE=piper but no Piper voice file found; using EdgeTTS")
+        except Exception as e:
+            print(f"[Factory] Piper TTS unavailable ({e}), falling back to EdgeTTS")
 
     # Microsoft Edge Neural voices for every tier: free, native Indian-language pronunciation
     try:

@@ -9,6 +9,7 @@ Downloaded from: https://huggingface.co/rhasspy/piper-voices
 
 import os
 import re
+from functools import lru_cache
 from pathlib import Path
 from math import gcd
 
@@ -30,6 +31,8 @@ _EN_TO_TE: dict[str, str] = {
     "friend": "ఫ్రెండ్",
     "mr": "మిస్టర్",
     "mrs": "మిసెస్",
+    "dr": "డాక్టర్",
+    "doctor": "డాక్టర్",
     "miss": "మిస్",
     "thanks": "థాంక్స్",
     "thank": "థాంక్",
@@ -394,39 +397,89 @@ if not _default_piper_dir.exists() and Path("/Users/koushikeslavath/Downloads/pi
 
 PIPER_VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", str(_default_piper_dir))
 PIPER_VOICE = os.environ.get("PIPER_VOICE", "te_IN-venkatesh-medium")
+# Full path to a voice's .onnx (its .onnx.json beside it). Set this for a custom-trained voice.
+PIPER_MODEL = os.environ.get("PIPER_MODEL", "")
 # length_scale < 1.0 speeds up speech. 0.65 is ~40% faster — natural, energetic, human pace.
 PIPER_LENGTH_SCALE = float(os.environ.get("PIPER_LENGTH_SCALE", "0.65"))
+# Expressiveness: noise_scale varies the voice, noise_w varies the rhythm. Piper's defaults are 0.667 / 0.8.
+PIPER_NOISE_SCALE = float(os.environ.get("PIPER_NOISE_SCALE", "0.667"))
+PIPER_NOISE_W = float(os.environ.get("PIPER_NOISE_W", "0.8"))
+PHRASE_CACHE_SIZE = 512  # greetings and stock replies repeat on every call
 
 TELEPHONY_SAMPLE_RATE = 8000
 
 _voice = None
 
 
+def model_path() -> Path | None:
+    """The voice to load: PIPER_MODEL if set, else PIPER_VOICE found anywhere under PIPER_VOICES_DIR."""
+    if PIPER_MODEL:
+        path = Path(PIPER_MODEL)
+        return path if path.is_file() else None
+    root = Path(PIPER_VOICES_DIR)
+    return next(root.rglob(f"{PIPER_VOICE}.onnx"), None) if root.is_dir() else None
+
+
 def _get_voice():
     global _voice
     if _voice is None:
         from piper.voice import PiperVoice
-        model_path = os.path.join(
-            PIPER_VOICES_DIR, "te", "te_IN", "venkatesh", "medium",
-            f"{PIPER_VOICE}.onnx",
-        )
-        print(f"[Piper] Loading Telugu voice from {model_path}")
-        _voice = PiperVoice.load(model_path)
+        path = model_path()
+        if path is None:
+            raise FileNotFoundError(f"Piper voice not found (PIPER_MODEL={PIPER_MODEL!r}, "
+                                    f"PIPER_VOICE={PIPER_VOICE!r} under {PIPER_VOICES_DIR})")
+        print(f"[Piper] Loading Telugu voice from {path}")
+        _voice = PiperVoice.load(str(path))
         print(f"[Piper] Voice loaded, sample_rate={_voice.config.sample_rate}")
     return _voice
 
 
+def warmup() -> bool:
+    """At server start, in the background: download the voice if it isn't on disk yet, then load it.
+
+    Calls use Edge until the voice is ready (the factory checks model_path() per call), so a slow or
+    failed download never delays or breaks a call.
+    """
+    if os.environ.get("VA_TTS_ENGINE", "edge").strip().lower() != "piper":
+        return False
+    import threading
+
+    def _load() -> None:
+        try:
+            if model_path() is None:
+                from app.streaming.piper_fetch import main as fetch_voice
+
+                if fetch_voice() != 0 or model_path() is None:
+                    print("[Startup] Piper voice not available; Telugu calls stay on Edge")
+                    return
+            _synthesize_pcm8k("నమస్కారమ్")
+            print("[Startup] Piper voice warmed up")
+        except Exception as e:  # a broken voice file must not take the server down; calls fall back to Edge
+            print(f"[Startup] Piper warmup failed: {e}")
+
+    threading.Thread(target=_load, name="piper-warmup", daemon=True).start()
+    return True
+
+
+def prepare_text(text: str) -> str:
+    """Spoken-form Telugu script for Piper: English words in Telugu letters, then numbers/dates/anusvara fixed."""
+    from app.streaming.telugu_text import normalize_telugu
+
+    return normalize_telugu(_transliterate(text))
+
+
+@lru_cache(maxsize=PHRASE_CACHE_SIZE)
 def _synthesize_pcm8k(text: str, length_scale: float | None = None) -> bytes:
-    """Synthesize text and return 8kHz 16-bit mono PCM bytes."""
+    """Synthesize text and return 8kHz 16-bit mono PCM bytes. Repeated phrases come from the cache."""
     from scipy.signal import resample_poly
     from piper.config import SynthesisConfig
 
     voice = _get_voice()
     sr = voice.config.sample_rate
 
-    text = _transliterate(text)
+    text = prepare_text(text)
     ls = length_scale if length_scale is not None else PIPER_LENGTH_SCALE
-    cfg = SynthesisConfig(length_scale=ls)
+    cfg = SynthesisConfig(length_scale=ls, noise_scale=PIPER_NOISE_SCALE, noise_w_scale=PIPER_NOISE_W)
     chunks = list(voice.synthesize(text, syn_config=cfg))
     if not chunks:
         return b""
@@ -451,8 +504,7 @@ def _synthesize_pcm8k(text: str, length_scale: float | None = None) -> bytes:
 
 def _split_phrases(text: str) -> list[str]:
     """Split at natural clause boundaries so each phrase can be synthesized and played in turn."""
-    import re
-    parts = [p.strip() for p in re.split(r'(?<=[,।;])\s+', text) if p.strip()]
+    parts = [p.strip() for p in re.split(r'(?<=[,।;.!?])\s+', text) if p.strip()]
     return parts if parts else [text]
 
 

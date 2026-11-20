@@ -189,6 +189,11 @@ def _startup() -> None:
         warmup()
     except Exception as e:
         print(f"[Startup] XTTS warmup skipped: {e}")
+    try:
+        from app.streaming.piper_tts import warmup as piper_warmup
+        piper_warmup()
+    except Exception as e:
+        print(f"[Startup] Piper warmup skipped: {e}")
 
 
 @app.post("/v1/plivo/ring/{call_id}")
