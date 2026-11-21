@@ -11,7 +11,7 @@
 - **What people expect:** on the phone, people reply about **200 ms** after the other person stops. A pause of 1 s already feels slow, and after about 2 s callers say "hello?".
 - **Fixed pause, not "semantic" detection:** end of turn is a fixed silence of **500 ms** (`VA_END_OF_TURN_MS`). Callers pause 300–450 ms at commas, so anything shorter makes the agent answer half a sentence. **[our tests]**
 - **Avoid semantic turn detection for Telugu:** it can wait seconds on real speech. **[our tests]**
-- **Greeting:** prepare it while the phone rings, so the first word plays the instant the call connects. Both engines do this.
+- **Greeting:** prepare it while the phone rings, so the first word plays the instant the call connects. Both engines do this. On OpenAI, send the greeting request right behind `session.update` instead of waiting for `session.updated`; the wait cost ~0.7 s at pickup. **[our tests]**
 - **Engine reply delay, measured from caller stopping to agent speaking:** Gemini `gemini-3.8-live` **0.9 s**, OpenAI `gpt-realtime-1.5` **1.1 s**, the three-step `gpt-4o-mini` pipeline **3.5–4 s** (too slow). **[our tests]**
 - **Avoid reasoning models** (`gpt-realtime-2.1`, Premium) for calls. They add delay and say "let me check…" before acting. **[our tests]**
 - **Speaking pace:** about 150–160 words a minute. Keep the agent's **Speech Rate at 1.05–1.15×**; 0.9× sounds sleepy. Gemini ignores this setting, so its prompt asks for a brisk pace instead.
@@ -69,7 +69,7 @@
 - **Spoken, not written forms:** చెప్తాను (not చెబుతాను), వీలవుతుందా (not సౌలభ్యం ఉంటుందా), మొదలవుతుంది (not ప్రారంభమవుతుంది), ఉంది (not అందుబాటులో ఉంది), థాంక్యూ అండి (not ధన్యవాదాలు).
 - **Respect:** "గారు" with the name, used rarely; "అండి" for softness.
 - **Numbers:** in the mixed style, Tenglish ("ఎయిటీన్ లాక్స్", "సండే మార్నింగ్ టెన్ కి"); in the pure style, Telugu words ("పద్దెనిమిది లక్షలు", "నూట యాభై గజాలు").
-- **Mini models** need a short plain-Telugu prompt; they garble long mixed-language rules. **[our tests]**
+- **Mini models** need a short brief (`_MINI_STYLE`, about half the length of `_STYLE`); they garble long rule lists. The brief still asks for natural code-mixing: forcing plain Telugu made mini sound like a newsreader ("పరిష్కారాలను అందిస్తున్నాం", "ధన్యవాదాలు"). **[our tests]**
 
 ## 7. Turn-taking, silence and endings
 
@@ -82,7 +82,7 @@
 
 | Setting | OpenAI | Gemini |
 |---|---|---|
-| Model | `gpt-realtime-1.5` (Standard) | `gemini-3.8-live` |
+| Model | `gpt-realtime-mini` (all tiers, since 2026-11-21) | `gemini-3.8-live` |
 | Voice | `marin` (female), `cedar` (male) | `Kore` (female), `Charon` (male) |
 | Turn detection | `server_vad`, 500 ms | automatic activity detection, 500 ms |
 | Speed | Speech Rate 1.05–1.15× | prompt asks for a brisk pace |
@@ -123,6 +123,11 @@
   - **OpenAI** kept its gains (name once, no checking questions, no formal words) with replies of about 1.1–1.4 s.
   - **Test artifact:** the simulated caller says "ఎక్కువ అనిపిస్తుంది." and then "లొకేషన్ ఎక్కడ?" after a full stop, so the agent's answer to the concern gets cut off. A real caller usually waits, so judge the concern rule on real calls.
   - **Still to fix:** the goodbye turn sometimes packs three sentences (confirmation, pickup info, thanks).
+- **2026-11-21, live calls moved to `gpt-realtime-mini`** (about a fifth of the cost: ₹0.92 vs ₹4.43 for the same 21 s test call on `gpt-realtime-2.1`):
+  - The old mini prompt was written for plots only and banned English, so mini spoke textbook Telugu on a services call.
+  - New general `_MINI_STYLE` (no business named, product and service names kept in English, everyday English words allowed, newsreader words banned) plus the greeting sent with the session settings. Simulated call, before → after: first word after pickup 1.35 s → 0.0 s; average reply 1.43 s → 1.20 s; "అవును అండీ" opening 4 of 6 replies → no opener used more than 3 times; formal words 3 → 0; booking confirmed as done instead of asked.
+  - Mini used "గారు" on its own ("సరే గారు"); the respect rule now says గారు only right after the name.
+  - **Still to fix:** mini repeats "సరే అండి" as an opener and sometimes garbles the goodbye.
 
 ## Sources
 
