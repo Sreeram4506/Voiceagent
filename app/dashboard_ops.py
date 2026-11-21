@@ -15,6 +15,8 @@ from fastapi.responses import Response
 from sqlalchemy import extract, func, text
 
 from app.db import SessionLocal
+from app.providers.factory import get_telephony
+from app.services import autodialer
 from app.models import (
     AIEmployee,
     ActivityLog,
@@ -38,7 +40,6 @@ from app.models import (
 ops = APIRouter(prefix="/dashboard", tags=["dashboard-ops"])
 
 _playground: dict[str, list[dict[str, str]]] = {}  # "{tid}:{agent_id}" -> turns
-_campaigns_paused: dict[int, bool] = {}  # tenant_id -> bool
 
 
 def _now() -> datetime:
@@ -240,10 +241,8 @@ def overview(request: Request):
             .count()
         )
         emp = _first_emp(db, tid)
-        from app.dashboard import _auto_call_active, _auto_call_stats
 
         plivo = bool(os.getenv("PLIVO_AUTH_ID"))
-        tid_stats = _auto_call_stats.get(tid, {"total_dialed": 0, "remaining": 0})
         return {
             "kpis": {
                 "contacts": leads,
@@ -275,7 +274,7 @@ def overview(request: Request):
                 "notes": next_appt.notes,
             } if next_appt else None,
             "appointments_today": remaining_today,
-            "autocall": {"active": _auto_call_active.get(tid, False), **tid_stats, "paused": _campaigns_paused.get(tid, False)},
+            "autocall": {**autodialer.status(tid), "paused": autodialer.is_paused(tid)},
             "cluster": {"version": "2.4.12", "node": "AP-TG-HYD-01", "healthy": True},
         }
 
@@ -457,19 +456,7 @@ def launch_campaign(request: Request, campaign_id: int):
         _log(db, tid, "campaign.launched", c.name)
         db.commit()
 
-    from app.dashboard import _auto_call_active, _auto_call_stats
-    import threading
-    if not _auto_call_active.get(tid):
-        _auto_call_active[tid] = True
-        from app.dashboard import _auto_call_loop
-        t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
-        t.start()
-        with SessionLocal() as db2:
-            remaining = db2.query(Lead).filter(Lead.tenant_id == tid, Lead.status == LeadStatus.NEW).count()
-        result = {"status": "started", "remaining": remaining}
-    else:
-        result = {"status": "already_running"}
-    return {"ok": True, "autocall": result, "warning": warning}
+    return {"ok": True, "autocall": autodialer.start(tid), "warning": warning}
 
 
 @ops.get("/api/contact-lists")
@@ -718,9 +705,9 @@ _EXT_TO_CT = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".
 
 
 @ops.post("/api/employees/{employee_id}/audio")
-async def upload_agent_audio(request: Request, employee_id: int, file: UploadFile = File(...)):
+def upload_agent_audio(request: Request, employee_id: int, file: UploadFile = File(...)):
     tid = _require_tid(request)
-    data = await file.read()
+    data = file.file.read()
     if len(data) > _MAX_AUDIO_BYTES:
         return {"error": "Audio file too large (max 5 MB)"}
     ct = file.content_type or "audio/mpeg"
@@ -806,7 +793,7 @@ def live_calls(request: Request):
             "calls": data,
             "distribution": dist,
             "count": len(rows),
-            "paused": _campaigns_paused.get(tid, False),
+            "paused": autodialer.is_paused(tid),
         }
 
 
@@ -876,9 +863,7 @@ def transfer_call(request: Request, call_id: int, payload: dict | None = None):
 @ops.post("/api/pause-all")
 def pause_all(request: Request):
     tid = _require_tid(request)
-    _campaigns_paused[tid] = True
-    from app.dashboard import _auto_call_active
-    _auto_call_active[tid] = False
+    autodialer.set_paused(tid, True)
     with SessionLocal() as db:
         db.query(Campaign).filter(Campaign.tenant_id == tid, Campaign.status == CampaignStatus.RUNNING).update(
             {"status": CampaignStatus.PAUSED}, synchronize_session=False
@@ -892,7 +877,7 @@ def pause_all(request: Request):
 @ops.post("/api/resume-all")
 def resume_all(request: Request):
     tid = _require_tid(request)
-    _campaigns_paused[tid] = False
+    autodialer.set_paused(tid, False)
     with SessionLocal() as db:
         db.query(Campaign).filter(Campaign.tenant_id == tid, Campaign.status == CampaignStatus.PAUSED).update(
             {"status": CampaignStatus.RUNNING}, synchronize_session=False
@@ -900,18 +885,7 @@ def resume_all(request: Request):
         db.query(AIEmployee).filter(AIEmployee.tenant_id == tid).update({"paused": False}, synchronize_session=False)
         _log(db, tid, "campaigns.resume_all", "Resume")
         db.commit()
-    from app.dashboard import _auto_call_active, _auto_call_stats, _auto_call_loop
-    import threading
-    if not _auto_call_active.get(tid):
-        _auto_call_active[tid] = True
-        t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
-        t.start()
-        with SessionLocal() as db2:
-            remaining = db2.query(Lead).filter(Lead.tenant_id == tid, Lead.status == LeadStatus.NEW).count()
-        result = {"status": "started", "remaining": remaining}
-    else:
-        result = {"status": "already_running"}
-    return {"ok": True, "paused": False, "autocall": result}
+    return {"ok": True, "paused": False, "autocall": autodialer.start(tid)}
 
 
 @ops.get("/api/appointments")
@@ -1325,7 +1299,7 @@ def _openai_reply(api_key: str, message: str, prior: list[dict[str, str]]) -> st
 
 
 @ops.post("/api/employees/{employee_id}/single-call")
-async def employee_single_call(request: Request, employee_id: int, payload: dict):
+def employee_single_call(request: Request, employee_id: int, payload: dict):
     """Dispatch a single outbound call from a specific voice agent."""
     from app.dashboard import _to_e164
     from app.streaming.ws import set_call_mode
@@ -1349,13 +1323,7 @@ async def employee_single_call(request: Request, employee_id: int, payload: dict
     from app.services.billing import balance_paise
 
     settings = get_settings()
-    auth_id = os.getenv("PLIVO_AUTH_ID")
-    if auth_id:
-        from app.providers.plivo import PlivoTelephony
-        telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
-    else:
-        from app.providers.mock import MockTelephony
-        telephony = MockTelephony()
+    telephony = get_telephony()
 
     with SessionLocal() as db:
         emp = db.query(AIEmployee).filter(AIEmployee.id == employee_id, AIEmployee.tenant_id == tid).first()
@@ -1447,7 +1415,7 @@ EXCEL_CAMPAIGN_LINES = 40  # calls at once for an Excel campaign, matching the a
 
 
 @ops.post("/api/employees/{employee_id}/excel-campaign")
-async def employee_excel_campaign(
+def employee_excel_campaign(
     request: Request,
     employee_id: int,
     file: UploadFile = File(...),
@@ -1466,7 +1434,7 @@ async def employee_excel_campaign(
         if not emp:
             return {"error": "Employee not found"}
 
-    content = await file.read()
+    content = file.file.read()
     filename = file.filename or "upload.xlsx"
 
     # Support CSV fallback
@@ -1583,13 +1551,8 @@ async def employee_excel_campaign(
                 emp2.window_end = dtime(23, 59)
                 db2.commit()
 
-    # Kick auto-call loop for this tenant
-    from app.dashboard import _auto_call_active, _auto_call_loop
-    import threading
-    if not _auto_call_active.get(tid) and added > 0:
-        _auto_call_active[tid] = True
-        t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
-        t.start()
+    if added > 0:
+        autodialer.start(tid)
 
     warning = None if added else "no new contacts found in the file (only blanks, invalid numbers or Do-Not-Call numbers)"
     return {"ok": True, "campaign_id": campaign_id, "added": added, "skipped": skipped, "warning": warning}

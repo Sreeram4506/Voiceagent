@@ -12,9 +12,9 @@ def login(client):
 
 
 def stop_dialer(tid: int) -> None:
-    from app.dashboard import _auto_call_active
+    from app.services import autodialer
 
-    _auto_call_active[tid] = False
+    autodialer.stop(tid)
 
 
 def agent_with_list(client, *, window: tuple[time, time], attempts: int) -> tuple[int, int, int]:

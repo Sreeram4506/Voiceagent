@@ -3,21 +3,17 @@
 import io
 import os
 import re
-import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 
 from app.db import SessionLocal
 from app.models import AIEmployee, Call, CallDirection, CallStatus, CallTurn, ContactList, Lead, LeadStatus
+from app.providers.factory import get_telephony
+from app.services import autodialer
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-# Per-tenant auto-call state  (tenant_id -> value)
-STUCK_CALL_MINUTES = 30  # no real campaign call lasts this long
-_auto_call_active: dict[int, bool] = {}
-_auto_call_stats: dict[int, dict] = {}
 
 # Per-tenant AI agent config
 _ai_agent_config: dict[int, dict] = {}
@@ -59,7 +55,7 @@ def _default_agent_config(tid: int) -> dict:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
+def dashboard_page(request: Request):
     from app.auth import get_session_data
     if not get_session_data(request):
         return RedirectResponse("/login?next=/dashboard/", status_code=302)
@@ -67,7 +63,7 @@ async def dashboard_page(request: Request):
 
 
 @router.get("/single", response_class=HTMLResponse)
-async def single_call_page(request: Request):
+def single_call_page(request: Request):
     from app.auth import get_session_data
     if not get_session_data(request):
         return RedirectResponse("/login?next=/dashboard/single", status_code=302)
@@ -75,7 +71,7 @@ async def single_call_page(request: Request):
 
 
 @router.get("/campaign", response_class=HTMLResponse)
-async def campaign_page(request: Request):
+def campaign_page(request: Request):
     from app.auth import get_session_data
     if not get_session_data(request):
         return RedirectResponse("/login?next=/dashboard/campaign", status_code=302)
@@ -83,7 +79,7 @@ async def campaign_page(request: Request):
 
 
 @router.get("/history", response_class=HTMLResponse)
-async def history_page(request: Request):
+def history_page(request: Request):
     from app.auth import get_session_data
     if not get_session_data(request):
         return RedirectResponse("/login?next=/dashboard/history", status_code=302)
@@ -190,9 +186,7 @@ def add_lead_manually(request: Request, payload: dict):
 
 @router.post("/api/recall/{lead_id}")
 def recall_lead(request: Request, lead_id: int):
-    import os
     from app.config import get_settings
-    from app.providers.mock import MockTelephony
     from app.services.scheduler import dispatch_due
     tid = _require_tid(request)
 
@@ -205,17 +199,10 @@ def recall_lead(request: Request, lead_id: int):
         db.commit()
 
         settings = get_settings()
-        auth_id = os.getenv("PLIVO_AUTH_ID")
-        if auth_id:
-            from app.providers.plivo import PlivoTelephony
-            telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
-        else:
-            telephony = MockTelephony()
-
         from app.services.compliance import InMemoryDNDRegistry
         report = dispatch_due(
             db,
-            telephony=telephony,
+            telephony=get_telephony(),
             dnd=InMemoryDNDRegistry(),
             now=datetime.now(timezone.utc),
             callback_url=f"{settings.public_url}/v1/plivo/status",
@@ -226,11 +213,11 @@ def recall_lead(request: Request, lead_id: int):
 
 
 @router.post("/api/upload")
-async def upload_excel(request: Request, file: UploadFile = File(...)):
+def upload_excel(request: Request, file: UploadFile = File(...)):
     import openpyxl
     tid = _require_tid(request)
 
-    content = await file.read()
+    content = file.file.read()
     wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
     ws = wb.active
 
@@ -305,10 +292,8 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
 @router.post("/api/dispatch")
 def dispatch_all(request: Request):
     from app.config import get_settings
-    from app.providers.mock import MockTelephony
     from app.services.compliance import InMemoryDNDRegistry
     from app.services.scheduler import dispatch_due
-    import os
     tid = _require_tid(request)
 
     with SessionLocal() as db:
@@ -318,16 +303,9 @@ def dispatch_all(request: Request):
             db.flush()
 
         settings = get_settings()
-        auth_id = os.getenv("PLIVO_AUTH_ID")
-        if auth_id:
-            from app.providers.plivo import PlivoTelephony
-            telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
-        else:
-            telephony = MockTelephony()
-
         report = dispatch_due(
             db,
-            telephony=telephony,
+            telephony=get_telephony(),
             dnd=InMemoryDNDRegistry(),
             now=datetime.now(timezone.utc),
             callback_url=f"{settings.public_url}/v1/plivo/status",
@@ -336,117 +314,6 @@ def dispatch_all(request: Request):
         )
         db.commit()
         return {"dialed": report.dialed, "skipped": report.skipped}
-
-
-def _note_waiting(tenant_id: int, report, employee) -> None:
-    """Remember, and log once, why contacts are waiting when nothing could be dialed."""
-    from collections import Counter
-
-    from app.services.scheduler import explain_wait
-
-    waiting = ""
-    if not report.dialed and report.skipped:
-        reason = Counter(report.skipped.values()).most_common(1)[0][0]
-        waiting = explain_wait(reason, employee)
-        if waiting != _auto_call_stats[tenant_id].get("waiting"):
-            print(f"[AUTO-CALL][tid={tenant_id}] {len(report.skipped)} contacts waiting: {waiting}")
-    _auto_call_stats[tenant_id]["waiting"] = waiting
-
-
-def _auto_call_loop(tenant_id: int):
-    import os
-    import time
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session as SASession
-    from app.config import get_settings
-    from app.services.compliance import InMemoryDNDRegistry
-    from app.services.scheduler import dispatch_due
-
-    url = get_settings().database_url
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    engine = create_engine(url, connect_args=connect_args)
-    _auto_call_stats[tenant_id] = {"total_dialed": 0, "remaining": 0}
-
-    while _auto_call_active.get(tenant_id):
-        should_wait = False
-        did_dial = False
-
-        try:
-            with SASession(engine) as db:
-                remaining = db.query(Lead).filter(Lead.tenant_id == tenant_id, Lead.status == LeadStatus.NEW).count()
-                _auto_call_stats[tenant_id]["remaining"] = remaining
-                if remaining == 0:
-                    _auto_call_active[tenant_id] = False
-                    break
-
-                # Only time out calls stuck in DIALING state for > 2 minutes (no answer/network drop)
-                dialing_timeout = datetime.now(timezone.utc) - timedelta(seconds=120)
-                stale_dialing = db.query(Call).filter(
-                    Call.tenant_id == tenant_id,
-                    Call.status == CallStatus.DIALING,
-                    Call.started_at < dialing_timeout,
-                ).all()
-                for c in stale_dialing:
-                    c.status = CallStatus.NO_ANSWER
-                # A call "connected" this long never sent its hang-up callback; free the line it holds.
-                stuck = db.query(Call).filter(
-                    Call.tenant_id == tenant_id,
-                    Call.status == CallStatus.CONNECTED,
-                    Call.started_at < datetime.now(timezone.utc) - timedelta(minutes=STUCK_CALL_MINUTES),
-                ).all()
-                for c in stuck:
-                    c.status = CallStatus.FAILED
-                if stuck:
-                    print(f"[AUTO-CALL][tid={tenant_id}] freed {len(stuck)} lines held by calls stuck as connected")
-                if stale_dialing or stuck:
-                    db.commit()
-
-                in_flight = db.query(Call).filter(
-                    Call.tenant_id == tenant_id,
-                    Call.status.in_([CallStatus.DIALING, CallStatus.CONNECTED])
-                ).count()
-                if in_flight >= 40:
-                    should_wait = True
-                else:
-                    batch = 40 - in_flight
-                    emp = db.query(AIEmployee).filter(AIEmployee.tenant_id == tenant_id).first()
-                    if emp and emp.max_concurrency < 40:
-                        emp.max_concurrency = 40
-                        db.flush()
-
-                    settings = get_settings()
-                    auth_id = os.getenv("PLIVO_AUTH_ID")
-                    if auth_id:
-                        from app.providers.plivo import PlivoTelephony
-                        telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
-                    else:
-                        from app.providers.mock import MockTelephony
-                        telephony = MockTelephony()
-
-                    report = dispatch_due(
-                        db,
-                        telephony=telephony,
-                        dnd=InMemoryDNDRegistry(),
-                        now=datetime.now(timezone.utc),
-                        callback_url=f"{settings.public_url}/v1/plivo/status",
-                        retry_delay_minutes=settings.retry_delay_minutes,
-                        batch_size=batch,
-                    )
-                    db.commit()
-                    _auto_call_stats[tenant_id]["total_dialed"] += len(report.dialed)
-                    did_dial = len(report.dialed) > 0
-                    _note_waiting(tenant_id, report, emp)
-        except Exception as e:
-            print(f"[AUTO-CALL][tid={tenant_id}] error: {e}")
-
-        if should_wait:
-            time.sleep(15)
-        elif did_dial:
-            time.sleep(15)
-        else:
-            time.sleep(10)
-
-    engine.dispose()
 
 
 def _open_calling_hours(tid: int) -> None:
@@ -474,42 +341,33 @@ def _get_tid_from_request_or_first(request=None) -> int:
 @router.post("/api/autocall/start")
 def start_auto_call(request: Request):
     tid = _require_tid(request)
-    if _auto_call_active.get(tid):
-        stats = _auto_call_stats.get(tid, {"total_dialed": 0, "remaining": 0})
-        return {"status": "already_running", **stats}
+    if autodialer.status(tid)["active"]:
+        return autodialer.start(tid)  # already running
     _open_calling_hours(tid)
-    _auto_call_active[tid] = True
-    t = threading.Thread(target=_auto_call_loop, args=(tid,), daemon=True)
-    t.start()
-    with SessionLocal() as db:
-        remaining = db.query(Lead).filter(Lead.tenant_id == tid, Lead.status == LeadStatus.NEW).count()
-    return {"status": "started", "remaining": remaining}
+    return autodialer.start(tid)
 
 
 @router.post("/api/autocall/stop")
 def stop_auto_call(request: Request):
     tid = _require_tid(request)
-    _auto_call_active[tid] = False
-    stats = _auto_call_stats.get(tid, {"total_dialed": 0, "remaining": 0})
-    return {"status": "stopped", **stats}
+    return autodialer.stop(tid)
 
 
 @router.get("/api/autocall/status")
 def auto_call_status(request: Request):
     tid = _require_tid(request)
     with SessionLocal() as db:
-        remaining = db.query(Lead).filter(Lead.tenant_id == tid, Lead.status == LeadStatus.NEW).count()
         in_flight = db.query(Call).filter(
             Call.tenant_id == tid,
             Call.status.in_([CallStatus.DIALING, CallStatus.CONNECTED])
         ).count()
-    stats = _auto_call_stats.get(tid, {"total_dialed": 0})
+    state = autodialer.status(tid)
     return {
-        "active": _auto_call_active.get(tid, False),
-        "remaining": remaining,
+        "active": state["active"],
+        "remaining": state["remaining"],
         "in_flight": in_flight,
-        "total_dialed": stats.get("total_dialed", 0),
-        "waiting": stats.get("waiting", ""),
+        "total_dialed": state["total_dialed"],
+        "waiting": state["waiting"],
     }
 
 
@@ -649,7 +507,7 @@ def delete_call(request: Request, call_id: int):
 
 
 @router.get("/ai-agent", response_class=HTMLResponse)
-async def ai_agent_page(request: Request):
+def ai_agent_page(request: Request):
     from app.auth import get_session_data
     if not get_session_data(request):
         return RedirectResponse("/login?next=/dashboard/ai-agent", status_code=302)
@@ -716,12 +574,10 @@ def ai_agent_call(request: Request, payload: dict):
         set_call_mode(call.id, "ai_agent")
 
         settings = get_settings()
-        auth_id = os.getenv("PLIVO_AUTH_ID")
-        if not auth_id:
+        if not os.getenv("PLIVO_AUTH_ID"):
             return {"error": "Plivo not configured"}
 
-        from app.providers.plivo import PlivoTelephony
-        telephony = PlivoTelephony(auth_id, os.environ["PLIVO_AUTH_TOKEN"], public_url=settings.public_url)
+        telephony = get_telephony()
         caller_id = emp.phone_number or os.getenv("VA_CALLER_ID")
         if not caller_id:
             return {"error": "AI employee has no assigned phone number or VA_CALLER_ID configured"}
@@ -816,7 +672,7 @@ def load_voice_model():
 
 
 @router.post("/api/voice/profile")
-async def upload_voice_profile(
+def upload_voice_profile(
     audio: UploadFile = File(...),
     transcript: str = Form(""),
     name: str = Form(""),
@@ -824,7 +680,7 @@ async def upload_voice_profile(
     from app.streaming.indicf5_tts import save_voice_profile
     import re as _re
 
-    audio_bytes = await audio.read()
+    audio_bytes = audio.file.read()
     if not name.strip():
         name = audio.filename.rsplit(".", 1)[0] if audio.filename else "voice"
     profile_id = _re.sub(r"[^a-z0-9_]", "_", name.lower().strip())
@@ -850,7 +706,7 @@ def delete_voice_profile_endpoint(profile_id: str):
 
 
 @router.post("/api/voice/test")
-async def test_voice(payload: dict):
+def test_voice(payload: dict):
     """Test TTS synthesis — returns a WAV file."""
     import tempfile
     from app.streaming.indicf5_tts import synthesize_to_file, get_active_profile
