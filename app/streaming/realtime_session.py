@@ -20,10 +20,10 @@ import websockets
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.realtime_cost import RealtimeUsage
 
-# gpt-realtime-1.5 answers ~0.5s sooner than the gpt-realtime-2.x reasoning models on Telugu calls.
-MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime-1.5")
-# Voice engine tiers: standard is the fastest model, premium the most capable one.
-MODEL_BY_TIER = {"premium": "gpt-realtime-2.1"}
+# gpt-realtime-mini costs about a third of gpt-realtime-1.5/2.1 per audio token; being compared on live calls.
+MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime-mini")
+# Every tier uses the same model while the cheaper one is compared; set OPENAI_REALTIME_MODEL to override.
+MODEL_BY_TIER = {"premium": MODEL}
 TRANSCRIBE_MODEL = "gpt-4o-transcribe"
 VOICES = {"female": "marin", "male": "cedar"}
 LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "Tamil", "kn": "Kannada"}
