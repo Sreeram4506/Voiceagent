@@ -14,6 +14,10 @@ def agent_audio(item_id: str, seconds: float) -> dict:
     return {"type": "response.output_audio.delta", "item_id": item_id, "delta": base64.b64encode(ulaw).decode()}
 
 
+# Language-style rules apply to the full models; mini models get a short plain-Telugu brief instead.
+FULL_MODEL = "gpt-realtime-1.5"
+
+
 def make_session(**kwargs):
     session = RealtimeSession("key", "Book a site visit.", "te", **kwargs)
     to_openai: list[dict] = []
@@ -197,7 +201,7 @@ def test_silent_line_gets_two_check_ins_and_then_a_polite_goodbye():
 
 
 def test_telugu_natural_mix_uses_swap_list_and_examples():
-    session, *_ = make_session(language_style="natural_mix")
+    session, *_ = make_session(language_style="natural_mix", model=FULL_MODEL)
     assert "టైమ్" in session._instructions
     assert "రేట్" in session._instructions
     assert "సైట్ విజిట్" in session._instructions
@@ -207,13 +211,13 @@ def test_telugu_natural_mix_uses_swap_list_and_examples():
 
 
 def test_telugu_pure_style_avoids_english():
-    session, *_ = make_session(language_style="pure")
+    session, *_ = make_session(language_style="pure", model=FULL_MODEL)
     assert "pure, natural Telugu" in session._instructions
     assert "టైమ్" not in session._instructions
 
 
 def test_telugu_english_heavy_style():
-    session, *_ = make_session(language_style="english_heavy")
+    session, *_ = make_session(language_style="english_heavy", model=FULL_MODEL)
     assert "lean heavily on English" in session._instructions
 
 
