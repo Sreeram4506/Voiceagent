@@ -47,6 +47,7 @@ def test_ulaw_round_trip_stays_close_to_the_original():
 def test_greeting_made_before_pickup_plays_the_moment_the_phone_attaches():
     async def scenario():
         session, to_openai, to_phone, send, end, _ = make_session(greeting="నమస్కారం అండి")
+        await session._configure()  # settings, then the greeting request right behind them
         await session._on_event({"type": "session.updated"})
         assert to_openai[-1]["type"] == "response.create"
         assert "నమస్కారం అండి" in to_openai[-1]["response"]["instructions"]
