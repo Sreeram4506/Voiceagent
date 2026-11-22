@@ -74,16 +74,17 @@
 ## 7. Turn-taking, silence and endings
 
 - **Talked-over replies:** drop any audio that was already on its way; never play over the caller. **[our tests]**
-- **Silence:** check in after about 5 s of quiet, in three or four words. Give up politely after two check-ins.
-- **Booking:** book any agreed visit before the goodbye.
-- **Ending:** say the goodbye out loud, then hang up. Never hang up mid-goodbye.
+- **Silence:** check in after about 5 s of quiet with a fixed line ("హలో అండి, వినపడుతుందా?", then "హలో... ఉన్నారా అండి?"). Give up politely after two check-ins. Send these without the conversation in view, or mini carries on its pitch instead. **[our tests]**
+- **Booking:** book any agreed visit before the goodbye, on exactly the day the caller said. A call back is not a booking.
+- **Ending:** say the goodbye out loud, ending in "bye", then hang up. Never hang up mid-goodbye. Mini never calls `end_call`, so the code hangs up once a reply ending in bye has played. **[our tests]**
+- **Busy, not interested, wrong number:** accept it the first time, one line, bye. Never pitch to a wrong number.
 
 ## 8. Voice and engine settings
 
 | Setting | OpenAI | Gemini |
 |---|---|---|
 | Model | `gpt-realtime-mini` (all tiers, since 2026-11-21) | `gemini-3.8-live` |
-| Voice | `marin` (female), `cedar` (male) | `Kore` (female), `Charon` (male) |
+| Voice | `marin` (female), `echo` (male, closest to the owner's reference voice; `VA_MALE_VOICE` overrides) | `Kore` (female), `Charon` (male) |
 | Turn detection | `server_vad`, 500 ms | automatic activity detection, 500 ms |
 | Speed | Speech Rate 1.05–1.15× | prompt asks for a brisk pace |
 | Language pin | prompt | prompt + `te-IN` + Telugu transcription |
@@ -92,6 +93,8 @@
 ## 9. How to check a change
 
 1. Run the same test call: `VA_DATABASE_URL=sqlite:///local_test.db python call_tests/simulate_call.py <label> standard`.
+   For the awkward moments (cut-ins, hang-ups, busy, wrong number, silence), run the scenarios with a caller that reacts like a person:
+   `VA_DATABASE_URL=sqlite:///local_test.db python call_tests/scenario_call.py <label> [scenario ...]`.
 2. Compare these targets with the last recording:
 
 | Measure | Target |
@@ -128,6 +131,18 @@
   - New general `_MINI_STYLE` (no business named, product and service names kept in English, everyday English words allowed, newsreader words banned) plus the greeting sent with the session settings. Simulated call, before → after: first word after pickup 1.35 s → 0.0 s; average reply 1.43 s → 1.20 s; "అవును అండీ" opening 4 of 6 replies → no opener used more than 3 times; formal words 3 → 0; booking confirmed as done instead of asked.
   - Mini used "గారు" on its own ("సరే గారు"); the respect rule now says గారు only right after the name.
   - **Still to fix:** mini repeats "సరే అండి" as an opener and sometimes garbles the goodbye.
+
+- **2026-11-22, scenario calls with a reacting caller** (an LLM persona that hears the agent and answers with a natural OpenAI voice; seven scenarios; reference: a real Hyderabad sales call by the owner, male, ~113 Hz, heavy Telugu-English mix):
+  - Before: the agent never hung up after a goodbye (0 of 5 calls), booked a callback as an appointment, said a different day than the caller, kept pitching after "no" and to a wrong number, said "వెళ్ళిపోరా" and "Good night" at random, and the silence check-ins carried on the pitch.
+  - After: the agent ends 7 of 7 calls itself after "... bye", stops within 0.4–0.5 s when cut off, ends busy and not-interested calls in one line, and the silence check-ins are exact. Price is right after a "NEVER MAKE UP A PRICE" rule (it once made up "ఆరు రెండు లక్షలు").
+  - Opening line given as a fill-in shape ("హలో Ravi గారు, నేను <name>, <company> నుంచి. ఒక్క నిమిషం మాట్లాడొచ్చా అండి?") stopped garbled greetings.
+  - English-heavy Telugu got its own sample phrases from the reference call (అన్నమాట, as well as, basically).
+  - Male voice `cedar` → `echo`: ~120 Hz against the reference's 113 Hz (cedar ~153 Hz).
+  - **Still to fix (mini's limits):** "ధన్యవాదాలు" and other banned words still slip in about once a call; odd phrases now and then ("ఫిర్యాదు చేస్తే").
+- **2026-11-22, real calls to the owner (through a tunnel to a laptop):**
+  - On an unclear first answer the agent re-introduced itself and gave a 15 s speech with a meeting push; it ignored "ఎందుకంటే?". Flow now: the greeting asks if they are free; if free, why you are calling in one sentence and ask if they want to hear more; if busy, ask when they will be free and say bye; ask for the next step only after they show interest.
+  - The caller's words came out garbled and the agent sounded unclear, but the laptop's internet was dropping (ping 12–500 ms, OpenAI timeouts). Judge voice quality on production calls, not through a laptop.
+  - Clarity on simulated calls (words garbled, judged ignoring script): mini 10–15%, mini at 0.9× speed 10–11%, `gpt-realtime-1.5` 7–13% at about five times the cost. Slower speech and the bigger model did not fix it.
 
 ## Sources
 

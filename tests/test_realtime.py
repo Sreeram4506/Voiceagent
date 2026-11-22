@@ -283,3 +283,35 @@ def test_model_without_a_known_price_reports_tokens_but_no_cost():
         assert "no price known" in session.usage_report() and "audio out 300" in session.usage_report()
 
     asyncio.run(scenario())
+
+
+def _goodbye_reply(session, text: str):
+    async def play():
+        await session._on_event(agent_audio("bye", 0.1))
+        await session._on_event({"type": "response.output_audio_transcript.done", "item_id": "bye", "transcript": text})
+        await session._on_event({"type": "response.done", "response": {
+            "status": "completed", "output": [{"type": "message", "role": "assistant"}]}})
+    return play()
+
+
+def test_agent_hangs_up_after_its_own_goodbye_even_without_the_tool():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await _goodbye_reply(session, "సరే అండి, థాంక్యూ, bye!")
+        await asyncio.sleep(0.6)
+        assert ended and session.ended
+
+    asyncio.run(scenario())
+
+
+def test_bye_in_the_middle_of_a_reply_does_not_hang_up():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await _goodbye_reply(session, "Bye చెప్పే ముందు, ఒక్క విషయం అండి, Saturday ఓకేనా?")
+        await asyncio.sleep(0.6)
+        assert not ended
+        await session.cancel()
+
+    asyncio.run(scenario())

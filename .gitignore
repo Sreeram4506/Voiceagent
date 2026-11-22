@@ -58,3 +58,4 @@ piper_work/
 models/
 
 .venv/
+call_tests/scenarios/

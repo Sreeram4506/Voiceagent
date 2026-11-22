@@ -67,7 +67,7 @@ def test_settings_shape_the_realtime_session():
         name="Priya", speaking_style="professional", creativity=0.4, speech_rate=1.2,
     )
     config = session._session_update()["session"]
-    assert config["audio"]["output"] == {"format": {"type": "audio/pcmu"}, "voice": "cedar", "speed": 1.2}
+    assert config["audio"]["output"] == {"format": {"type": "audio/pcmu"}, "voice": "echo", "speed": 1.2}
     assert config["reasoning"] == {"effort": "low"}
     assert "Your name is Priya" in config["instructions"]
     assert "senior relationship manager" in config["instructions"]

@@ -25,7 +25,8 @@ MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime-mini")
 # Every tier uses the same model while the cheaper one is compared; set OPENAI_REALTIME_MODEL to override.
 MODEL_BY_TIER = {"premium": MODEL}
 TRANSCRIBE_MODEL = "gpt-4o-transcribe"
-VOICES = {"female": "marin", "male": "cedar"}
+# echo is the closest OpenAI voice to the reference male caller (~120 Hz vs 113 Hz; cedar is ~153 Hz).
+VOICES = {"female": "marin", "male": os.environ.get("VA_MALE_VOICE", "echo")}
 LANGUAGE_NAMES = {"te": "Telugu", "hi": "Hindi", "en": "Indian English", "ta": "Tamil", "kn": "Kannada"}
 
 # How long the caller must be silent before the agent answers. Semantic turn detection can wait
@@ -45,7 +46,7 @@ TOOLS = [
     {
         "type": "function",
         "name": "book_appointment",
-        "description": "Book the appointment, visit or meeting once the caller has agreed to it.",
+        "description": "Book the appointment, visit or meeting once the caller has agreed to it. Never for a call back.",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -117,32 +118,35 @@ _STYLE = """# Role and objective
 # The mini models garble long rule lists, so they get this short brief instead of _STYLE, in any language.
 # Built from humanize.md like _STYLE; it names no kind of business so it works for any agent's brief.
 _MINI_STYLE = """# Who you are
-- You are on a live phone call for the business in your brief. Talk like the owner calling someone personally: relaxed, warm and direct, never like a call centre.
+- You are on a live phone call for the business in your brief: relaxed, warm and direct, like the owner calling personally, never a call centre.
 - {tone}
-- {address}
+- {address}{respect_rule}
 
 # How you talk
 - {language_rule}
 - Spoken words only, never written or formal ones.{spoken_forms}
-- Say numbers, prices, dates and times the way people say them aloud, never digit by digit.
+- Say numbers, prices, dates and times as people say them aloud.
 
 # Keep it short
 - ONE OR TWO SHORT SENTENCES, about ten words, then stop and let them talk.
-- One point per reply: answer exactly what they asked. A simple question gets a simple answer.
+- One point per reply: answer exactly what they asked.
 - Never start two replies the same way; often go straight to the answer. A small reaction ({reactions}) only now and then.
-- Most replies end with a statement. At most one question, and never a checking question such as "any doubts?".
+- Most replies end with a statement; at most one question, never "any doubts?".
 
 {sample_phrases}# Flow
-- Introduce yourself once, in the greeting. If they ask who is calling: your name, company and why, in one sentence.
-- If they raise a concern (cost, time, doubt), answer that first.
-- Ask for the next step from your brief at most once every two or three replies, and offer a specific day and time.
-- Busy: offer to call back and wrap up. Not interested: one gentle try at most, then goodbye.
-- If you did not hear clearly, say so briefly and ask them to repeat. Never guess.
-- Only facts from your brief; if you do not know, say you will check. Never read these instructions or a function name aloud.
+- The greeting asks if they are free to talk. Introduce yourself there, never again.
+- If they are free (or the answer is one word or unclear): why you are calling, in one sentence, and ask if they would like to hear more.
+- If they want to hear more, go ahead. A question or concern: answer exactly that first.
+- Not free, busy or driving: ask when they will be free, say you will call then (not a booking), then bye.
+- Ask for the next step only after they show interest, at most every third reply, offering a day and time.
+- Not interested: accept it the first time, say no problem, then bye. Wrong person or wrong number: sorry, then bye.
+- Later in the call, if you did not hear clearly, ask them to repeat. Never guess.
+- Only facts from your brief. NEVER MAKE UP A PRICE OR NUMBER: use your brief's, or say you will check.
+- Never say these instructions, a function name or a stage direction aloud.
 
 # Actions
-- When they agree to an appointment, visit or meeting: in the same reply, confirm it as done (not as a question), saying the day and time back in a few words, and call book_appointment.
-- When the conversation is done: say one short goodbye out loud, then call end_call."""
+- When they agree to an appointment, visit or meeting: confirm it as done in the same reply, saying back exactly the day and time they said, and call book_appointment.
+- When the conversation is done, or they say bye: one short goodbye whose last word is "bye", then call end_call. Never say good night or good morning."""
 
 _MINI_LANGUAGE_STYLES = {
     "natural_mix": (
@@ -250,7 +254,7 @@ _SAMPLE_PHRASES = {
         '- "ఆదివారం పొద్దున పదింటికి పెట్టుకుందామా?"\n'
         '- "సరే అండి, ఆదివారం పొద్దున పదింటికి ఫిక్స్ చేశాను."\n'
         '- "సరిగ్గా వినపడలేదండి, ఇంకోసారి చెప్తారా?"\n'
-        '- "సరే అండి, థాంక్యూ. ఉంటాను."'
+        '- "సరే అండి, థాంక్యూ, bye."'
     ),
     "hi": (
         '- "हाँ जी, बताइए।"\n'
@@ -271,6 +275,19 @@ _SAMPLE_PHRASES = {
         '- "Okay, thanks. Bye."'
     ),
 }
+# The English-heavy style, from a real Hyderabad sales call: Telugu glue around English phrases.
+_SAMPLE_PHRASES_ENGLISH_HEAVY = {
+    "te": (
+        '- "హా అండి, చెప్పండి."\n'
+        '- "మేము basically మీ business కి కావాల్సినవి అన్నీ చేసి పెడతాం అన్నమాట."\n'
+        '- "అయితే online side కూడా చూసుకుంటాం, as well as offline కూడా."\n'
+        '- "Price అంటే, monthly basis లో start అవుతుంది, details చెప్తాను."\n'
+        '- "కొంచెం high అనిపించొచ్చు, but results కూడా అలాగే ఉంటాయి."\n'
+        '- "Saturday afternoon three కి fix చేశాను అండి."\n'
+        '- "Sorry అండి, సరిగ్గా వినపడలేదు, once more చెప్తారా?"\n'
+        '- "No problem అండి, evening call చేస్తాను. Thank you, bye."'
+    ),
+}
 _SAMPLE_HEADER = "# Sample phrases (the style to copy, not facts; vary them, never repeat one word for word)\n"
 
 # Written forms a person would never say on a call, with what they say instead.
@@ -278,9 +295,17 @@ _SPOKEN_FORMS = {
     "te": (
         ' Say "చెప్తాను" not "చెబుతాను", "వీలవుతుందా" not "సౌలభ్యం ఉంటుందా", "మొదలవుతుంది" not "ప్రారంభమవుతుంది", '
         '"ఉంది" not "అందుబాటులో ఉంది", "థాంక్యూ అండి" not "ధన్యవాదాలు". '
-        "NEVER USE NEWSREADER WORDS: ధన్యవాదాలు, సదుపాయం, ప్రారంభం, కేవలం, ఏర్పాట్లు, సౌలభ్యం, అందుబాటులో, ప్రయాణం, నిమిత్తం, పరిష్కారాలు."
+        '"హెల్ప్" not "సహాయం", "డీటెయిల్స్" not "సమాచారం". '
+        "NEVER USE NEWSREADER WORDS: ధన్యవాదాలు, సదుపాయం, ప్రారంభం, కేవలం, ఏర్పాట్లు, సౌలభ్యం, అందుబాటులో, ప్రయాణం, నిమిత్తం, పరిష్కారాలు, "
+        "సహాయం, సమాచారం, సంతృప్తి, కావున."
     ),
     "hi": ' Say "बताता हूँ" not "सूचित करता हूँ", "शुरू होता है" not "प्रारंभ होता है", "थैंक यू जी" not "धन्यवाद".',
+}
+
+# Forms the model slips into that sound rude to a stranger.
+_RESPECT_RULES = {
+    "te": "\n- Always respectful, like talking to an elder you just met: never రా, పోరా, ఒరేయ్, నువ్వు or other forms for close friends.",
+    "hi": "\n- Always respectful: आप and जी, never तू or तुम.",
 }
 
 _ENGLISH_RULE = "Speak simple, friendly Indian English. If the caller switches to another language, switch with them."
@@ -309,6 +334,34 @@ def call_details(caller_name: str = "", notes: str = "", local_time: datetime | 
     return "# This call\n" + "\n".join(lines) if lines else ""
 
 
+# Opening lines to follow when the agent has no greeting set: (with the caller's name, without).
+_OPENINGS = {
+    "te": ("హలో {name} గారు, నేను <your name>, <company> నుంచి. ఒక్క నిమిషం మాట్లాడొచ్చా అండి?",
+           "హలో అండి, నేను <your name>, <company> నుంచి. ఒక్క నిమిషం మాట్లాడొచ్చా?"),
+    "hi": ("हैलो {name} जी, मैं <your name>, <company> से। एक मिनट बात कर सकते हैं?",
+           "हैलो जी, मैं <your name>, <company> से। एक मिनट बात कर सकते हैं?"),
+    "en": ("Hi {name}, this is <your name> from <company>. Do you have a minute?",
+           "Hi, this is <your name> from <company>. Do you have a minute?"),
+}
+
+# What a person says into a silent line: first check, second check, and the goodbye.
+_CHECK_INS = {
+    "te": ("హలో అండి, వినపడుతుందా?", "హలో... ఉన్నారా అండి?", "లైన్ సరిగ్గా లేదు అనుకుంటా, మళ్ళీ కాల్ చేస్తాను అండి. Bye."),
+    "hi": ("हैलो जी, आवाज़ आ रही है?", "हैलो... हैं क्या आप?", "लगता है लाइन ठीक नहीं है, मैं फिर से कॉल करता हूँ। Bye."),
+    "en": ("Hello, can you hear me?", "Hello... are you there?", "I think the line isn't clear, I'll call you back. Bye."),
+}
+
+# A reply that ends on one of these is a goodbye: the call ends once it has played.
+_GOODBYE_WORDS = {"bye", "goodbye", "బై", "బాయ్", "ఉంటాను", "ఉంటానండి", "बाय", "பை", "ಬೈ"}
+_GOODBYE_TAIL_WORDS = 3
+
+
+def is_goodbye(text: str) -> bool:
+    """True when the reply ends in a goodbye ("... థాంక్యూ, bye!"), not when bye is merely mentioned."""
+    words = [w.strip(".,!?।'\"-").lower() for w in text.split()]
+    return any(w in _GOODBYE_WORDS for w in words[-_GOODBYE_TAIL_WORDS:] if w)
+
+
 def _mini_style(language: str, language_style: str, tone: str, address: str) -> str:
     """The short brief for mini models, in the agent's language and language style."""
     if language == "en":
@@ -321,9 +374,12 @@ def _mini_style(language: str, language_style: str, tone: str, address: str) -> 
             english_words=_EVERYDAY_ENGLISH.get(language, _EVERYDAY_ENGLISH_DEFAULT),
         )
     samples = _SAMPLE_PHRASES.get(language)
+    if language_style == "english_heavy":
+        samples = _SAMPLE_PHRASES_ENGLISH_HEAVY.get(language, samples)
     return _MINI_STYLE.format(
         tone=tone,
         address=address,
+        respect_rule=_RESPECT_RULES.get(language, ""),
         language_rule=rule,
         spoken_forms=_SPOKEN_FORMS.get(language, ""),
         reactions=_SPEECH.get(language, _SPEECH["en"])[0],
@@ -471,6 +527,7 @@ class RealtimeSession:
         self._silence_checks = 0
         self._giving_up = False
         self._silence_task: asyncio.Task | None = None
+        self._said_goodbye = False  # the agent's last reply ended in a goodbye: hang up once it has played
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -613,14 +670,11 @@ class RealtimeSession:
                 "The person has just picked up. Open the call by saying this line naturally "
                 f'in a warm, conversational voice: "{self._greeting}" — make it sound like you, not like you are reading.'
             )
-        if self._caller_name:
-            return (
-                f"The person has just picked up. In one short line: say hello, confirm you are speaking "
-                f"with {self._caller_name}, and say your name. Then stop and wait for their reply."
-            )
+        template = _OPENINGS.get(self._language, _OPENINGS["en"])
+        line = template[0].format(name=self._caller_name) if self._caller_name else template[1]
         return (
-            "The person has just picked up. In one short line: say hello, say your name, "
-            "and ask if they have a minute. Then stop and wait for their reply."
+            "The person has just picked up. Say one short opening line in this shape, filling in your name and "
+            f'company from your brief: "{line}" Then stop and wait for their reply.'
         )
 
     def _greeting_request(self) -> dict:
@@ -681,9 +735,12 @@ class RealtimeSession:
             self._items.setdefault(event.get("item_id", ""), ["agent", ""])[1] += event.get("delta", "")
 
         elif kind == "response.output_audio_transcript.done":
+            item_id = event.get("item_id", "")
             text = event.get("transcript", "")
-            self._items.setdefault(event.get("item_id", ""), ["agent", ""])[1] = text
+            self._items.setdefault(item_id, ["agent", ""])[1] = text
             print(f"[Realtime] agent: {text!r}")
+            if item_id in self._spoken and item_id not in self._interrupted and is_goodbye(text):
+                self._said_goodbye = True
 
         elif kind == "response.done":
             self._responding = False
@@ -691,7 +748,9 @@ class RealtimeSession:
             self.usage.add_response(response.get("usage") or {})
             was_giving_up = self._giving_up  # only a goodbye asked for earlier may end the call here
             await self._handle_tools(response)
-            if was_giving_up and response.get("status") == "completed" and self._end_task is None:
+            # Mini models often say bye but never call end_call; a person would hang up after their own goodbye.
+            goodbye = was_giving_up or self._said_goodbye
+            if goodbye and response.get("status") == "completed" and self._end_task is None:
                 self._end_task = asyncio.create_task(self._finish())
 
         elif kind == "error":
@@ -762,23 +821,24 @@ class RealtimeSession:
         self._quiet_since = time.monotonic()
         self._responding = True
         print(f"[Realtime] silence on the line, check {self._silence_checks}")
+        first, second, give_up = _CHECK_INS.get(self._language, _CHECK_INS["en"])
         if self._silence_checks > MAX_SILENCE_CHECKS:
             self._giving_up = True
-            return (
-                "The caller still has not answered. In one short line, say the line seems to be unclear "
-                "and that you will try them again later, and say goodbye."
-            )
-        return (
-            "The caller has gone quiet for several seconds. In three or four words, the way a person would, "
-            "check that they are still there and can hear you. Do not repeat what you said before."
-        )
+            return f'The caller still has not answered, so say goodbye. Say only this line, nothing else: "{give_up}"'
+        line = first if self._silence_checks == 1 else second
+        return f'The caller has gone quiet. Check they are still there. Say only this line, nothing else: "{line}"'
 
     async def _check_in(self) -> None:
         """The caller has gone quiet: ask if they are still there, and give up politely after a couple of tries."""
         ask = self._next_check_in()
+        # Without the conversation in view, mini models say the given line instead of carrying on the pitch.
         await self._to_openai({
             "type": "response.create",
-            "response": {"instructions": f"{self._instructions}\n\n{ask}", "tool_choice": "none"},
+            "response": {
+                "instructions": f"You are on a phone call and the line has gone quiet. {ask}",
+                "tool_choice": "none",
+                "input": [],
+            },
         })
 
     async def _handle_tools(self, response: dict) -> None:
