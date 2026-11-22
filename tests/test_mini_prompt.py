@@ -89,3 +89,48 @@ def test_greeting_is_requested_with_the_session_settings_not_after_them():
         assert session._ready.is_set()
 
     asyncio.run(scenario())
+
+
+def test_mini_hangs_up_on_a_wrong_number_or_a_firm_no():
+    flow = section(prompt(), "Flow")
+    assert "wrong number" in flow
+    assert "accept it the first time" in flow
+
+
+def test_mini_books_the_day_the_caller_said():
+    assert "exactly the day and time they said" in section(prompt(), "Actions")
+
+
+def test_mini_goodbye_ends_with_bye_and_never_a_wrong_greeting():
+    actions = section(prompt(), "Actions")
+    assert '"bye"' in actions
+    assert "good night" in prompt().lower()
+
+
+def test_telugu_is_always_respectful():
+    assert "పోరా" in section(prompt(), "Who you are")  # named only to forbid it
+
+
+def test_english_heavy_telugu_has_its_own_samples():
+    heavy = section(prompt(language_style="english_heavy"), "Sample phrases")
+    mixed = section(prompt(language_style="natural_mix"), "Sample phrases")
+    assert heavy != mixed
+    assert "అన్నమాట" in heavy and "as well as" in heavy
+
+
+def test_opening_gives_mini_a_line_to_follow():
+    session = RealtimeSession("key", "Call about our services.", "te", model=MINI, caller_name="Ravi")
+    opening = session._greeting_request()["response"]["instructions"]
+    assert "ఒక్క నిమిషం" in opening and "Ravi" in opening
+
+
+def test_mini_never_makes_up_a_price():
+    assert "NEVER MAKE UP A PRICE OR NUMBER" in section(prompt(), "Flow")
+
+
+def test_mini_checks_they_are_free_then_says_why_then_waits_for_interest():
+    flow = section(prompt(), "Flow")
+    assert "never again" in flow  # one introduction only
+    assert "if they are free" in flow.lower() and "why you are calling" in flow
+    assert "ask when they will be free" in flow
+    assert "only after they show interest" in flow
