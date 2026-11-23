@@ -71,7 +71,7 @@ class GeminiLiveSession(RealtimeSession):
         self.frames_received += 1
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
-        audio = {"data": base64.b64encode(frame).decode(), "mimeType": "audio/pcm;rate=8000"}
+        audio = {"data": base64.b64encode(self._without_echo(frame)).decode(), "mimeType": "audio/pcm;rate=8000"}
         await self._send_json({"realtimeInput": {"audio": audio}})
 
     # ---- Gemini socket ---------------------------------------------------

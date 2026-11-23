@@ -17,6 +17,7 @@ from datetime import datetime
 import numpy as np
 import websockets
 
+from app.streaming.echo_gate import EchoGate
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.realtime_cost import RealtimeUsage
 
@@ -36,6 +37,7 @@ END_OF_TURN_SILENCE_MS = int(os.environ.get("VA_END_OF_TURN_MS", "500"))
 GOODBYE_ASK = "The caller is ending the call. Say one short, warm goodbye in their language, then stop."
 # The callee's own "hello" on pickup lands on top of the greeting; don't let it cut the greeting off.
 GREETING_GUARD_SECONDS = 1.5
+ECHO_TAIL_SECONDS = 0.6  # the phone plays our audio a little after we send it: treat echo as possible that long
 # A person checks "hello, are you there?" when the line goes quiet, and gives up after a couple of tries.
 SILENCE_CHECK_SECONDS = 5.0
 MAX_SILENCE_CHECKS = 2
@@ -531,6 +533,7 @@ class RealtimeSession:
         self.usage = RealtimeUsage()
         self._spoken: set[str] = set()
         self._guard_until = 0.0
+        self._echo_gate = EchoGate()  # the agent's own voice leaking back must not cut it off
         self._t0 = time.monotonic()
         # Silence on the line: who is talking, when it last went quiet, and how often we have checked in.
         self._caller_speaking = False
@@ -580,6 +583,8 @@ class RealtimeSession:
             await self._play(item_id, pcm)
 
     async def cancel(self) -> None:
+        gate = self._echo_gate
+        print(f"[Realtime] echo gate: {gate.blocked_frames} frames silenced, agent level {gate.agent_level:.0f}")
         for task in (self._silence_task, self._end_task, self._task):
             if task and not task.done() and task is not asyncio.current_task():
                 task.cancel()
@@ -605,8 +610,13 @@ class RealtimeSession:
         self.frames_received += 1
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
-        audio = base64.b64encode(pcm_to_ulaw(frame)).decode()
+        audio = base64.b64encode(pcm_to_ulaw(self._without_echo(frame))).decode()
         await self._to_openai({"type": "input_audio_buffer.append", "audio": audio})
+
+    def _without_echo(self, frame: bytes) -> bytes:
+        """The caller's audio, with the agent's own voice leaking back down the line turned into silence."""
+        now = time.monotonic()
+        return self._echo_gate.filter(frame, agent_playing=now < self._play_until + ECHO_TAIL_SECONDS, now=now)
 
     # ---- OpenAI socket ---------------------------------------------------
 
@@ -787,6 +797,7 @@ class RealtimeSession:
         seconds = len(pcm) / 16000
         self._current_item_ms += seconds * 1000
         self._play_until = max(now, self._play_until) + seconds
+        self._echo_gate.agent_audio(pcm)
         with suppress(RuntimeError, OSError):
             await self._send(media_message(self.stream_sid, pcm))
 
