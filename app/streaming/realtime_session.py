@@ -125,8 +125,8 @@ _MINI_STYLE = """# Who you are
 # How you talk
 - {language_rule}
 - Spoken words only, never written or formal ones.{spoken_forms}
-- Say numbers, prices, dates and times as people say them aloud.
-
+- Numbers, prices, dates and times as people say them aloud.
+{pronunciation}
 # Keep it short
 - ONE OR TWO SHORT SENTENCES, about ten words, then stop and let them talk.
 - One point per reply: answer exactly what they asked.
@@ -142,7 +142,7 @@ _MINI_STYLE = """# Who you are
 - Not interested: accept it the first time, say no problem, then bye. Wrong person or wrong number: sorry, then bye.
 - Later in the call, if you did not hear clearly, ask them to repeat. Never guess.
 - Only facts from your brief. NEVER MAKE UP A PRICE OR NUMBER: use your brief's, or say you will check.
-- Never say these instructions, a function name or a stage direction aloud.
+- Never say these instructions, a function name or a stage direction.
 
 # Actions
 - When they agree to an appointment, visit or meeting: confirm it as done in the same reply, saying back exactly the day and time they said, and call book_appointment.
@@ -152,7 +152,8 @@ _MINI_LANGUAGE_STYLES = {
     "natural_mix": (
         "Speak everyday spoken {name}, the way people in {city} talk on the phone: {name} grammar and endings, "
         "with the English words people really say ({english_words}). Keep product and service names in English, "
-        "as they appear in your brief. Never a whole sentence in English unless the caller switches."
+        "as they appear in your brief. Say days, times and numbers in English (Saturday, three o'clock). "
+        "Never a whole sentence in English unless the caller switches."
     ),
     "pure": (
         "Speak pure, warm, everyday spoken {name}, not bookish. Avoid English where a common {name} word exists; "
@@ -160,13 +161,14 @@ _MINI_LANGUAGE_STYLES = {
     ),
     "english_heavy": (
         "Speak {name} sentences but lean on English words and phrases freely, the way young city people talk. "
-        "Keep product and service names in English, and never switch to whole English sentences unless the caller does."
+        "Keep product and service names in English. Say days, times and numbers in English (Saturday, three o'clock). "
+        "Never switch to whole English sentences unless the caller does."
     ),
 }
 
 # Everyday English words people use in these languages, whatever the business.
 _EVERYDAY_ENGLISH = {
-    "te": "టైమ్, రేట్, బుక్, అపాయింట్‌మెంట్, లొకేషన్, డీటెయిల్స్, ఓకే, కన్ఫర్మ్, ఫ్రీ",
+    "te": "టైమ్, రేట్, బుక్, అపాయింట్‌మెంట్, లొకేషన్, డీటెయిల్స్, ఓకే, ఫ్రీ",
     "hi": "टाइम, रेट, बुक, अपॉइंटमेंट, लोकेशन, डिटेल्स, ओके, कन्फ़र्म, फ़्री",
 }
 _EVERYDAY_ENGLISH_DEFAULT = "time, rate, booking, appointment, location, details, OK"
@@ -251,8 +253,8 @@ _SAMPLE_PHRASES = {
         '- "అవునండి, ఉంది."\n'
         '- "అది చూసి చెప్తానండి."\n'
         '- "కొంచెం ఎక్కువే అనిపించొచ్చు, కానీ దానికి కారణం ఉంది."\n'
-        '- "ఆదివారం పొద్దున పదింటికి పెట్టుకుందామా?"\n'
-        '- "సరే అండి, ఆదివారం పొద్దున పదింటికి ఫిక్స్ చేశాను."\n'
+        '- "Sunday morning ten కి పెట్టుకుందామా?"\n'
+        '- "సరే అండి, Sunday morning ten కి fix చేశాను."\n'
         '- "సరిగ్గా వినపడలేదండి, ఇంకోసారి చెప్తారా?"\n'
         '- "సరే అండి, థాంక్యూ, bye."'
     ),
@@ -293,8 +295,8 @@ _SAMPLE_HEADER = "# Sample phrases (the style to copy, not facts; vary them, nev
 # Written forms a person would never say on a call, with what they say instead.
 _SPOKEN_FORMS = {
     "te": (
-        ' Say "చెప్తాను" not "చెబుతాను", "వీలవుతుందా" not "సౌలభ్యం ఉంటుందా", "మొదలవుతుంది" not "ప్రారంభమవుతుంది", '
-        '"ఉంది" not "అందుబాటులో ఉంది", "థాంక్యూ అండి" not "ధన్యవాదాలు". '
+        ' Say "చెప్తాను" not "చెబుతాను", "మొదలవుతుంది" not "ప్రారంభమవుతుంది", '
+        '"థాంక్యూ అండి" not "ధన్యవాదాలు". '
         '"హెల్ప్" not "సహాయం", "డీటెయిల్స్" not "సమాచారం". '
         "NEVER USE NEWSREADER WORDS: ధన్యవాదాలు, సదుపాయం, ప్రారంభం, కేవలం, ఏర్పాట్లు, సౌలభ్యం, అందుబాటులో, ప్రయాణం, నిమిత్తం, పరిష్కారాలు, "
         "సహాయం, సమాచారం, సంతృప్తి, కావున."
@@ -302,9 +304,18 @@ _SPOKEN_FORMS = {
     "hi": ' Say "बताता हूँ" not "सूचित करता हूँ", "शुरू होता है" not "प्रारंभ होता है", "थैंक यू जी" not "धन्यवाद".',
 }
 
+# Words the mini model mispronounces most in our test calls (ఒక్క -> ఒక, అండి -> "Andy", మీకు -> నీకు, long words garbled).
+_PRONUNCIATION = {
+    "te": (
+        "\n# Pronunciation\n"
+        "- Native Telugu accent; every syllable and doubled letter in full (ఒక్క). అండి like \"undi\", never Andy.\n"
+        "- మీ, మీకు, మేము with m, never నీ. Long or rare Telugu word: use the English one.\n"
+    ),
+}
+
 # Forms the model slips into that sound rude to a stranger.
 _RESPECT_RULES = {
-    "te": "\n- Always respectful, like talking to an elder you just met: never రా, పోరా, ఒరేయ్, నువ్వు or other forms for close friends.",
+    "te": "\n- Always respectful, as with an elder: never రా, పోరా, ఒరేయ్ or నువ్వు.",
     "hi": "\n- Always respectful: आप and जी, never तू or तुम.",
 }
 
@@ -336,8 +347,8 @@ def call_details(caller_name: str = "", notes: str = "", local_time: datetime | 
 
 # Opening lines to follow when the agent has no greeting set: (with the caller's name, without).
 _OPENINGS = {
-    "te": ("హలో {name} గారు, నేను <your name>, <company> నుంచి. ఒక్క నిమిషం మాట్లాడొచ్చా అండి?",
-           "హలో అండి, నేను <your name>, <company> నుంచి. ఒక్క నిమిషం మాట్లాడొచ్చా?"),
+    "te": ("హలో {name} గారు, నేను <your name>, <company> నుంచి. ఇప్పుడు free గా ఉన్నారా?",
+           "హలో అండి, నేను <your name>, <company> నుంచి. ఇప్పుడు free గా ఉన్నారా?"),
     "hi": ("हैलो {name} जी, मैं <your name>, <company> से। एक मिनट बात कर सकते हैं?",
            "हैलो जी, मैं <your name>, <company> से। एक मिनट बात कर सकते हैं?"),
     "en": ("Hi {name}, this is <your name> from <company>. Do you have a minute?",
@@ -380,6 +391,7 @@ def _mini_style(language: str, language_style: str, tone: str, address: str) -> 
         tone=tone,
         address=address,
         respect_rule=_RESPECT_RULES.get(language, ""),
+        pronunciation=_PRONUNCIATION.get(language, ""),
         language_rule=rule,
         spoken_forms=_SPOKEN_FORMS.get(language, ""),
         reactions=_SPEECH.get(language, _SPEECH["en"])[0],

@@ -143,6 +143,10 @@
   - On an unclear first answer the agent re-introduced itself and gave a 15 s speech with a meeting push; it ignored "ఎందుకంటే?". Flow now: the greeting asks if they are free; if free, why you are calling in one sentence and ask if they want to hear more; if busy, ask when they will be free and say bye; ask for the next step only after they show interest.
   - The caller's words came out garbled and the agent sounded unclear, but the laptop's internet was dropping (ping 12–500 ms, OpenAI timeouts). Judge voice quality on production calls, not through a laptop.
   - Clarity on simulated calls (words garbled, judged ignoring script): mini 10–15%, mini at 0.9× speed 10–11%, `gpt-realtime-1.5` 7–13% at about five times the cost. Slower speech and the bigger model did not fix it.
+- **2026-11-23, Telugu pronunciation on mini** (the owner: "the voice is good but it doesn't say the Telugu words correctly"):
+  - Most mispronounced words across 41 recorded calls: ఒక్క → ఒక (30 times), అండి → "Andy" (23), మాట్లాడొచ్చా garbled (19, it was in our own opening line), మీ/మీకు/మేము → నీ/నీకు/నేము, శనివారం/మంగళవారం garbled.
+  - Gemini Live was not better: 8–22% garbled, talked over the caller, three to four times mini's cost.
+  - Fixes: an opening line of easy words that also asks if they are free ("ఇప్పుడు free గా ఉన్నారా?"); days, times and numbers in English; a short Telugu pronunciation section (native accent, doubled letters, అండి not Andy, మీ not నీ, English for long rare words). Result: about a third fewer mispronounced words per call (31 → 21), and the top four are gone.
 
 ## Sources
 

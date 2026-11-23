@@ -121,7 +121,7 @@ def test_english_heavy_telugu_has_its_own_samples():
 def test_opening_gives_mini_a_line_to_follow():
     session = RealtimeSession("key", "Call about our services.", "te", model=MINI, caller_name="Ravi")
     opening = session._greeting_request()["response"]["instructions"]
-    assert "ఒక్క నిమిషం" in opening and "Ravi" in opening
+    assert "Ravi" in opening
 
 
 def test_mini_never_makes_up_a_price():
@@ -134,3 +134,23 @@ def test_mini_checks_they_are_free_then_says_why_then_waits_for_interest():
     assert "if they are free" in flow.lower() and "why you are calling" in flow
     assert "ask when they will be free" in flow
     assert "only after they show interest" in flow
+
+
+def test_telugu_mini_has_pronunciation_rules():
+    rules = section(prompt(), "Pronunciation")
+    assert "ఒక్క" in rules and "Andy" in rules and "మీకు" in rules
+
+
+def test_other_languages_get_no_telugu_pronunciation_rules():
+    assert "# Pronunciation" not in prompt("en")
+
+
+def test_mixed_styles_say_days_and_times_in_english():
+    assert "days, times and numbers in English" in prompt(language_style="natural_mix")
+    assert "days, times and numbers in English" not in prompt(language_style="pure")
+
+
+def test_telugu_opening_uses_easy_words_and_asks_if_free():
+    session = RealtimeSession("key", "Call about our services.", "te", model=MINI, caller_name="Ravi")
+    opening = session._greeting_request()["response"]["instructions"]
+    assert "free గా ఉన్నారా" in opening and "మాట్లాడొచ్చా" not in opening
