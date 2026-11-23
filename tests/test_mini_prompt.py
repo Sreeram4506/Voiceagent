@@ -154,3 +154,30 @@ def test_telugu_opening_uses_easy_words_and_asks_if_free():
     session = RealtimeSession("key", "Call about our services.", "te", model=MINI, caller_name="Ravi")
     opening = session._greeting_request()["response"]["instructions"]
     assert "free గా ఉన్నారా" in opening and "మాట్లాడొచ్చా" not in opening
+
+
+def test_mini_answers_a_question_first_even_right_after_the_greeting():
+    flow = section(prompt(), "Flow").lower()
+    assert "a question at any point, even right after the greeting" in flow
+
+
+def test_mini_says_what_the_product_does_and_never_asks_to_hear_more():
+    flow = section(prompt(), "Flow")
+    assert "what it does for them" in flow
+    assert "NEVER ASK IF THEY WANT TO HEAR MORE" in flow
+
+
+def test_mini_answers_a_price_question_from_the_brief():
+    flow = section(prompt(), "Flow")
+    assert "Asked the price: never dodge it; say what your brief says about price" in flow
+
+
+def test_mini_never_dodges_price_and_gives_a_concrete_example():
+    flow = section(prompt(), "Flow")
+    assert "never dodge it" in flow
+    assert "one concrete example for their business" in flow
+
+
+def test_telugu_mini_spells_out_letters_and_keeps_andi_rare():
+    rules = section(prompt(), "Pronunciation")
+    assert "AI as ఏ ఐ" in rules and "అండి at most once per reply" in rules

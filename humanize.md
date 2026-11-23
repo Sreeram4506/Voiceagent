@@ -147,6 +147,12 @@
   - Most mispronounced words across 41 recorded calls: ఒక్క → ఒక (30 times), అండి → "Andy" (23), మాట్లాడొచ్చా garbled (19, it was in our own opening line), మీ/మీకు/మేము → నీ/నీకు/నేము, శనివారం/మంగళవారం garbled.
   - Gemini Live was not better: 8–22% garbled, talked over the caller, three to four times mini's cost.
   - Fixes: an opening line of easy words that also asks if they are free ("ఇప్పుడు free గా ఉన్నారా?"); days, times and numbers in English; a short Telugu pronunciation section (native accent, doubled letters, అండి not Andy, మీ not నీ, English for long rare words). Result: about a third fewer mispronounced words per call (31 → 21), and the top four are gone.
+- **2026-11-23, the agent did not understand the caller** (the owner: "when I tell it I want to know about voice agents, it tells me about automations"):
+  - Cause 1, the brief: production agent #1's script only names "AI automation, custom software development, and digital marketing" and never the voice agent, so the model mapped "voice agent" onto automation, and with no price in the brief it once made up "$1000 a month" and "one to two lakhs".
+  - Cause 2, the flow: "why you are calling, then ask if they want to hear more" made the model end nearly every reply with "వినాలా? / ఇంకా వివరాలు చెప్తా?", and it dodged price questions. Now: a question at any point, even right after the greeting, is answered first; the reason for the call names the product and what it does, then the agent stops and lets them react; NEVER ASK IF THEY WANT TO HEAR MORE; price is answered from the brief, never dodged; "how does it help me" gets one concrete example for their business.
+  - Test: ten Telugu caller lines (male voice, phone-band audio, asked after the pitch) through the real session, graded by a judge that knows the product. Live setup 21/30 right (5 wrong product); new prompt with the old script 22/30 (5 wrong product, one made-up price); new prompt with a voice-agent script 30/30.
+  - Pronunciation did not move: 19–25% of words garbled for marin, coral, shimmer and sage, natural mix or English-heavy, all within the test's noise. "Indraam" is still said wrongly sometimes even when spelled ఇంద్రామ్. This is the limit of OpenAI's realtime Telugu voices.
+  - Hearing: on phone-band audio the transcription caught the caller's words well; the misunderstanding was what the agent knew, not what it heard.
 
 ## Sources
 
