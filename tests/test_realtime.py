@@ -315,3 +315,59 @@ def test_bye_in_the_middle_of_a_reply_does_not_hang_up():
         await session.cancel()
 
     asyncio.run(scenario())
+
+
+def speech(level: float, seconds: float = 0.02) -> bytes:
+    t = np.arange(int(8000 * seconds))
+    return (np.sin(t * 0.3) * level * np.sqrt(2)).astype("<i2").tobytes()
+
+
+def agent_speech(item_id: str, seconds: float, level: float = 3000.0) -> dict:
+    ulaw = pcm_to_ulaw(speech(level, seconds))
+    return {"type": "response.output_audio.delta", "item_id": item_id, "delta": base64.b64encode(ulaw).decode()}
+
+
+def sent_audio(to_openai: list[dict]) -> list[bytes]:
+    return [ulaw_to_pcm(base64.b64decode(e["audio"])) for e in to_openai if e["type"] == "input_audio_buffer.append"]
+
+
+def test_echo_of_the_agents_own_voice_reaches_openai_as_silence():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session._on_event(agent_speech("a1", 5.0))
+        await session.on_audio(speech(3000 * 0.15))  # the phone leaking the agent back
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() < 50
+
+    asyncio.run(scenario())
+
+
+def test_caller_talking_over_the_agent_still_reaches_openai():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session._on_event(agent_speech("a1", 5.0))
+        for _ in range(3):
+            await session.on_audio(speech(2500))
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() > 1500
+
+    asyncio.run(scenario())
+
+
+def test_quiet_caller_is_heard_once_the_agent_has_finished():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session.on_audio(speech(300))  # nothing playing: even a soft "హా" goes through
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() > 200
+
+    asyncio.run(scenario())
