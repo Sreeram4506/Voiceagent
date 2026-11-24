@@ -19,7 +19,9 @@ from app.streaming.audio import FRAME_MS
 from app.streaming.gemini_live_session import GEMINI_MODEL, GeminiLiveSession
 from app.streaming.memory import load_memory, memory_to_prompt, update_memory
 from app.streaming.protocol import parse_event
-from app.streaming.realtime_session import MODEL, MODEL_BY_TIER, RealtimeSession, call_details, persona
+from app.streaming.realtime_session import (
+    MODEL, MODEL_BY_TIER, RealtimeSession, agent_instructions, call_details, opening_instruction, persona,
+)
 from app.streaming.recorded import RecordedAudioSession, _to_pcm_8k
 from app.streaming.session import StreamSession, pop_sentences
 from datetime import datetime
@@ -119,7 +121,7 @@ def _persona_settings(ctx: CallContext) -> dict:
 
 
 def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
-    if ctx is None or not factory.use_realtime(ctx.employee.voice_tier.value, ctx.mode):
+    if ctx is None or not factory.use_realtime(ctx.employee.voice_tier.value, ctx.mode, ctx.extras):
         return None
     call = {
         "script": ctx.employee.script,
@@ -143,6 +145,13 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
 
 
 def _classic_script(ctx: CallContext) -> str:
+    if factory.sarvam_voice(ctx.extras):
+        # Sarvam speaks for the relay here, so the reply model gets the same tuned prompt as a Realtime call.
+        return agent_instructions(
+            ctx.employee.script, ctx.employee.language, MODEL, caller_name=ctx.caller_name,
+            caller_notes=ctx.caller_notes, local_time=_local_time(ctx.timezone), memory_context=ctx.memory_context,
+            **_persona_settings(ctx),
+        )
     persona_settings = {k: v for k, v in _persona_settings(ctx).items() if k != "language_style"}
     return "\n\n".join(part for part in (
         ctx.employee.script,
@@ -152,13 +161,20 @@ def _classic_script(ctx: CallContext) -> str:
     ) if part)
 
 
+def _opening_request(ctx: CallContext) -> str:
+    """What the reply model is asked for the opening line on a Sarvam call; "" leaves the relay's own greeting."""
+    if not factory.sarvam_voice(ctx.extras):
+        return ""
+    return opening_instruction(ctx.employee.language, ctx.greeting, ctx.caller_name)
+
+
 async def _prepare_classic(ctx: CallContext) -> dict:
     """Write and voice the opening line while the phone rings, so the agent speaks the moment it is answered."""
     stt, llm, tts = factory.build_providers(ctx.employee, extras=ctx.extras)
     text = ctx.greeting.strip()
     if not text:
         written = ""
-        async for item in llm.stream_reply(_classic_script(ctx), [], ""):
+        async for item in llm.stream_reply(_classic_script(ctx), [], _opening_request(ctx)):
             if isinstance(item, str):
                 written += item
         sentences, rest = pop_sentences(written + " ")

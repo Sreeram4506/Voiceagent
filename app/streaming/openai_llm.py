@@ -45,16 +45,19 @@ _HUMANIZE_PROMPT = """VOICE CALL RULES (strict):
 
 
 class OpenAILLM:
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini", temperature: float = 0.85):
+    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini", temperature: float = 0.85,
+                 rules: str | None = None):
         self._client = openai.AsyncOpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
         self._model = model
         self._temperature = temperature
+        # The call rules added to every script; "" when the script already carries its own (the tuned prompt).
+        self.rules = _HUMANIZE_PROMPT if rules is None else rules
 
     async def stream_reply(
         self, script: str, history: list[tuple[str, str]], caller_text: str
     ) -> AsyncIterator[str | ToolRequest]:
         import time
-        system = f"{script}\n\n{_HUMANIZE_PROMPT}"
+        system = f"{script}\n\n{self.rules}" if self.rules else script
 
         messages = [{"role": "system", "content": system}]
         for role, text in history[-6:]:

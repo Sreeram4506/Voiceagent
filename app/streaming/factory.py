@@ -6,6 +6,7 @@ and can be forced with VA_VOICE_PIPELINE=classic to save cost.
 
 TTS priority:
   voice_clone tier       → XTTS v2 (zero-shot voice cloning, ~1-3s on MPS)
+  voice_engine="sarvam"  → Sarvam Bulbul (Telugu), on the relay instead of Realtime (needs SARVAM_API_KEY)
   te + VA_TTS_ENGINE=piper → Piper, our own Telugu voice on CPU (PIPER_MODEL / PIPER_VOICE)
   te / hi / en / ta / kn → EdgeTTS (Microsoft Neural, free, native pronunciation)
   Other languages        → OpenAI tts-1 → Piper (offline) → Mock
@@ -30,6 +31,11 @@ def _speech_rate(extras: dict) -> float:
         return 1.0
 
 
+def sarvam_voice(extras: dict | None) -> bool:
+    """The agent is set to Sarvam's voice and a Sarvam Model API key is configured."""
+    return str((extras or {}).get("voice_engine") or "").strip().lower() == "sarvam" and bool(os.getenv("SARVAM_API_KEY"))
+
+
 def _build_tts(employee, openai_key, extras=None):
     lang = getattr(employee, "language", "te") if employee else "te"
     voice_tier = getattr(employee, "voice_tier", "standard") if employee else "standard"
@@ -47,6 +53,14 @@ def _build_tts(employee, openai_key, extras=None):
             return provider
         except Exception as e:
             print(f"[Factory] XTTS unavailable ({e}), falling back to EdgeTTS")
+
+    # Sarvam's Telugu voice, when the agent is set to it (voice_engine="sarvam")
+    if sarvam_voice(extras):
+        from app.streaming.sarvam_tts import SARVAM_LANGUAGES, SarvamTTS
+        if lang in SARVAM_LANGUAGES:
+            print(f"[Factory] Sarvam TTS lang={lang} gender={gender} pace={speech_rate}")
+            return SarvamTTS(os.environ["SARVAM_API_KEY"], gender=gender, pace=speech_rate)
+        print(f"[Factory] Sarvam has no {lang} voice set up; using the next voice")
 
     # Our own Piper Telugu voice, on the server's CPU (VA_TTS_ENGINE=piper). Edge stays the default until it wins.
     if lang == "te" and os.getenv("VA_TTS_ENGINE", "edge").strip().lower() == "piper":
@@ -86,9 +100,12 @@ def _build_tts(employee, openai_key, extras=None):
     return MockAsyncTTS()
 
 
-def use_realtime(voice_tier: str, mode: str) -> bool:
-    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay."""
-    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
+def use_realtime(voice_tier: str, mode: str, extras: dict | None = None) -> bool:
+    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay.
+
+    Agents set to Sarvam's voice run on the relay, since Realtime speaks with its own voice.
+    """
+    if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic" or sarvam_voice(extras):
         return False
     key = "GEMINI_API_KEY" if voice_engine() == "gemini" else "OPENAI_API_KEY"
     return bool(os.getenv(key)) and mode != "broadcast" and voice_tier != "voice_clone"
@@ -111,7 +128,9 @@ def build_providers(employee, extras=None):
     if openai_key:
         from app.streaming.openai_llm import OpenAILLM
         from app.streaming.openai_stt import OpenAISTT
-        return OpenAISTT(openai_key), OpenAILLM(openai_key, temperature=temperature), tts
+        # Sarvam agents get the tuned Realtime prompt as their script, so the old relay rules are left out.
+        rules = "" if sarvam_voice(extras) else None
+        return OpenAISTT(openai_key), OpenAILLM(openai_key, temperature=temperature, rules=rules), tts
 
     if deepgram_key and anthropic_key:
         from app.streaming.claude_llm import ClaudeLLM

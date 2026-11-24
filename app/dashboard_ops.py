@@ -571,7 +571,8 @@ def list_employees(request: Request):
 
 
 _AGENT_EXTRA_KEYS = ("greeting", "speech_rate", "pitch", "archetype", "dialect", "guardrails",
-                     "voice_gender", "temperature", "speaking_style", "language_style", "agent_mode")
+                     "voice_gender", "temperature", "speaking_style", "language_style", "agent_mode",
+                     "voice_engine")
 
 
 def _clamp(value, low: float, high: float, fallback: float) -> float:
@@ -598,6 +599,8 @@ def _agent_extras(payload: dict) -> dict:
         out["language_style"] = "natural_mix"
     if "agent_mode" in out and out["agent_mode"] not in ("ai_agent", "recorded_audio"):
         out["agent_mode"] = "ai_agent"
+    if "voice_engine" in out and out["voice_engine"] not in ("openai", "sarvam"):
+        out["voice_engine"] = "openai"
     return out
 
 

@@ -10,6 +10,7 @@ talking over the agent opens the gate for the rest of what they say.
 import numpy as np
 
 FRAME_BYTES = 320  # 20 ms of 8 kHz 16-bit mono
+ECHO_TAIL_SECONDS = 0.6  # the phone plays our audio a little after we send it: treat echo as possible that long
 BARGE_IN_RATIO = 0.45  # the caller must be at least this loud, relative to the agent's voice, to cut in
 OPEN_FRAMES = 2  # consecutive loud frames that open the gate: a click or a pop is not the caller
 HOLD_SECONDS = 1.0  # stays open this long after the last loud frame, so the whole interruption is heard

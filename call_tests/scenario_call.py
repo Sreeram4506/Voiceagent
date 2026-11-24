@@ -10,6 +10,7 @@ Writes call_tests/scenarios/<run>/<scenario>.wav (both sides, as heard on the ph
 
 Usage (local server on :8000 with VA_DATABASE_URL=sqlite:///local_test.db, PLIVO_AUTH_ID empty):
     VA_DATABASE_URL=sqlite:///local_test.db python call_tests/scenario_call.py run1 [scenario ...]
+SIM_VOICE_ENGINE=sarvam runs the agent on Sarvam's voice (the server needs SARVAM_API_KEY).
 """
 
 import asyncio
@@ -170,7 +171,8 @@ def seed(scenario: Scenario, voice_gender: str, language_style: str) -> int:
         extras = dict(row.value) if row else {}
         extras[str(employee.id)] = {"voice_gender": voice_gender, "speaking_style": "humanized",
                                     "speech_rate": float(os.environ.get("SIM_SPEECH_RATE", "1.0")),
-                                    "language_style": language_style}
+                                    "language_style": language_style,
+                                    "voice_engine": os.environ.get("SIM_VOICE_ENGINE", "openai")}
         if row:
             row.value = extras
         else:

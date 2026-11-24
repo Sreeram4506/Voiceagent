@@ -17,7 +17,7 @@ from datetime import datetime
 import numpy as np
 import websockets
 
-from app.streaming.echo_gate import EchoGate
+from app.streaming.echo_gate import ECHO_TAIL_SECONDS, EchoGate
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.realtime_cost import RealtimeUsage
 
@@ -37,7 +37,6 @@ END_OF_TURN_SILENCE_MS = int(os.environ.get("VA_END_OF_TURN_MS", "500"))
 GOODBYE_ASK = "The caller is ending the call. Say one short, warm goodbye in their language, then stop."
 # The callee's own "hello" on pickup lands on top of the greeting; don't let it cut the greeting off.
 GREETING_GUARD_SECONDS = 1.5
-ECHO_TAIL_SECONDS = 0.6  # the phone plays our audio a little after we send it: treat echo as possible that long
 # A person checks "hello, are you there?" when the line goes quiet, and gives up after a couple of tries.
 SILENCE_CHECK_SECONDS = 5.0
 MAX_SILENCE_CHECKS = 2
@@ -445,6 +444,78 @@ Send = Callable[[str], Awaitable[None]]
 OnEnd = Callable[[], Awaitable[None]]
 
 
+def agent_instructions(
+    script: str,
+    language: str,
+    model: str = MODEL,
+    name: str = "",
+    speaking_style: str = "humanized",
+    creativity: float = 0.85,
+    caller_name: str = "",
+    caller_notes: str = "",
+    local_time: datetime | None = None,
+    language_style: str = "natural_mix",
+    memory_context: str = "",
+) -> str:
+    """Everything the agent is told: its brief, this call, and how to talk (the short brief on mini models)."""
+    caller_name = " ".join(caller_name.split())[:60]
+    if language == "en":
+        rule = _ENGLISH_RULE
+    else:
+        lang_name = LANGUAGE_NAMES.get(language, language)
+        city = _CITY_NAMES.get(language, "local")
+        style_key = language_style if language_style in _LANGUAGE_STYLES else "natural_mix"
+        swap_list = _SWAP_LISTS.get(language, "") if style_key != "pure" else ""
+        rule = _LANGUAGE_STYLES[style_key].format(name=lang_name, city=city, swap_list=swap_list)
+        if style_key != "pure":
+            examples = _EXAMPLE_LINES.get(language, "")
+            if examples:
+                rule += examples
+    reactions, respect, spoken_example = _SPEECH.get(language, _SPEECH["en"])
+    if caller_name:
+        address = (
+            f"You are speaking with {caller_name}. Say their name in the greeting and at most once more in the whole call, "
+            f"and always respectfully: {respect}."
+        )
+    else:
+        address = f"You do not know their name, so never guess one. Stay respectful: {respect}."
+    lang_display = LANGUAGE_NAMES.get(language, "the caller's language")
+    tone = "\n- ".join(persona(name, speaking_style, creativity))
+    if "mini" in model:
+        style = _mini_style(language, language_style, tone, address)
+    else:
+        style = _STYLE.format(
+            language_rule=rule,
+            tone=tone,
+            reactions=reactions,
+            address=address,
+            spoken_example=spoken_example,
+            language_name=lang_display,
+            spoken_forms=_SPOKEN_FORMS.get(language, ""),
+            sample_phrases=_SAMPLE_HEADER + _SAMPLE_PHRASES[language] if language in _SAMPLE_PHRASES else "",
+        )
+    details = call_details(caller_name, caller_notes, local_time)
+    details = call_details(caller_name, caller_notes, local_time)
+    return "\n\n".join(part for part in (script, details, style, memory_context) if part)
+
+
+def opening_instruction(language: str, greeting: str = "", caller_name: str = "") -> str:
+    """How the agent opens the call: the agent's own greeting, or a short line asking if they are free."""
+    greeting = greeting.strip()
+    if greeting:
+        return (
+            "The person has just picked up. Open the call by saying this line naturally "
+            f'in a warm, conversational voice: "{greeting}" — make it sound like you, not like you are reading.'
+        )
+    template = _OPENINGS.get(language, _OPENINGS["en"])
+    name = " ".join(caller_name.split())[:60]
+    line = template[0].format(name=name) if name else template[1]
+    return (
+        "The person has just picked up. Say one short opening line in this shape, filling in your name and "
+        f'company from your brief: "{line}" Then stop and wait for their reply.'
+    )
+
+
 class RealtimeSession:
     def __init__(
         self,
@@ -471,43 +542,10 @@ class RealtimeSession:
         self._greeting = greeting.strip()
         self._caller_name = " ".join(caller_name.split())[:60]
         self._voice = VOICES.get(voice_gender, VOICES["female"])
-        if language == "en":
-            rule = _ENGLISH_RULE
-        else:
-            lang_name = LANGUAGE_NAMES.get(language, language)
-            city = _CITY_NAMES.get(language, "local")
-            style_key = language_style if language_style in _LANGUAGE_STYLES else "natural_mix"
-            swap_list = _SWAP_LISTS.get(language, "") if style_key != "pure" else ""
-            rule = _LANGUAGE_STYLES[style_key].format(name=lang_name, city=city, swap_list=swap_list)
-            if style_key != "pure":
-                examples = _EXAMPLE_LINES.get(language, "")
-                if examples:
-                    rule += examples
-        reactions, respect, spoken_example = _SPEECH.get(language, _SPEECH["en"])
-        if self._caller_name:
-            address = (
-                f"You are speaking with {self._caller_name}. Say their name in the greeting and at most once more in the whole call, "
-                f"and always respectfully: {respect}."
-            )
-        else:
-            address = f"You do not know their name, so never guess one. Stay respectful: {respect}."
-        lang_display = LANGUAGE_NAMES.get(language, "the caller's language")
-        tone = "\n- ".join(persona(name, speaking_style, creativity))
-        if "mini" in model:
-            style = _mini_style(language, language_style, tone, address)
-        else:
-            style = _STYLE.format(
-                language_rule=rule,
-                tone=tone,
-                reactions=reactions,
-                address=address,
-                spoken_example=spoken_example,
-                language_name=lang_display,
-                spoken_forms=_SPOKEN_FORMS.get(language, ""),
-                sample_phrases=_SAMPLE_HEADER + _SAMPLE_PHRASES[language] if language in _SAMPLE_PHRASES else "",
-            )
-        details = call_details(self._caller_name, caller_notes, local_time)
-        self._instructions = "\n\n".join(part for part in (script, details, style, memory_context) if part)
+        self._instructions = agent_instructions(
+            script, language, model, name, speaking_style, creativity, caller_name, caller_notes, local_time,
+            language_style, memory_context,
+        )
 
         self.actions: list[str] = []
         self.ended = False
@@ -688,17 +726,7 @@ class RealtimeSession:
         }
 
     def _opening_instruction(self) -> str:
-        if self._greeting:
-            return (
-                "The person has just picked up. Open the call by saying this line naturally "
-                f'in a warm, conversational voice: "{self._greeting}" — make it sound like you, not like you are reading.'
-            )
-        template = _OPENINGS.get(self._language, _OPENINGS["en"])
-        line = template[0].format(name=self._caller_name) if self._caller_name else template[1]
-        return (
-            "The person has just picked up. Say one short opening line in this shape, filling in your name and "
-            f'company from your brief: "{line}" Then stop and wait for their reply.'
-        )
+        return opening_instruction(self._language, self._greeting, self._caller_name)
 
     def _greeting_request(self) -> dict:
         return {

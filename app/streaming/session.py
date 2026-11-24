@@ -12,6 +12,7 @@ from contextlib import suppress
 log = logging.getLogger(__name__)
 
 from app.providers.base import ToolRequest
+from app.streaming.echo_gate import ECHO_TAIL_SECONDS, EchoGate
 from app.streaming.emotion import detect_emotion
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.providers import AsyncLLM, AsyncSTT, AsyncTTS
@@ -76,6 +77,8 @@ class StreamSession:
         self._response: asyncio.Task | None = None
         self._speaking_opening = False
         self._echo_until: float = 0.0  # suppress VAD until this monotonic time
+        self._echo_gate = EchoGate()  # the agent's own voice leaking back must not count as the caller
+        self._play_until = 0.0  # monotonic time at which the phone finishes playing what we sent
         self._caller_done_at: float | None = None  # when the caller last stopped talking
         self._filler_cache: list[bytes] = []
         self._filler_idx: int = 0
@@ -118,7 +121,7 @@ class StreamSession:
                     chunk_bytes = 8000 * 2
                     chunks = [pcm[i:i + chunk_bytes] for i in range(0, len(pcm), chunk_bytes)]
                     for chunk in chunks:
-                        await self._safe_send(media_message(self.stream_sid, chunk))
+                        await self._send_agent_audio(chunk)
                         await asyncio.sleep(len(chunk) / (8000 * 2))
                 self.ended = True
                 if self._on_end:
@@ -170,7 +173,7 @@ class StreamSession:
             await asyncio.sleep(FILLER_DELAY_SECONDS)
             pcm = self._filler_cache[self._filler_idx % len(self._filler_cache)]
             self._filler_idx += 1
-            await self._safe_send(media_message(self.stream_sid, pcm))
+            await self._send_agent_audio(pcm)
             await asyncio.sleep(len(pcm) / (8000 * 2))
         except asyncio.CancelledError:
             raise
@@ -187,6 +190,7 @@ class StreamSession:
         if _time.monotonic() < self._echo_until:
             self._preroll.append(frame)
             return
+        frame = self._without_echo(frame)
         try:
             event = self.vad.feed(frame)
 
@@ -221,8 +225,21 @@ class StreamSession:
 
     # ---- outbound reply --------------------------------------------------
 
+    def _without_echo(self, frame: bytes) -> bytes:
+        """The caller's audio, with the agent's own voice leaking back down the line turned into silence."""
+        now = time.monotonic()
+        return self._echo_gate.filter(frame, agent_playing=now < self._play_until + ECHO_TAIL_SECONDS, now=now)
+
+    async def _send_agent_audio(self, pcm: bytes) -> None:
+        """Send agent audio to the phone, keeping track of what is playing so its echo can be told apart."""
+        now = time.monotonic()
+        self._echo_gate.agent_audio(pcm)
+        self._play_until = max(now, self._play_until) + len(pcm) / (8000 * 2)
+        await self._safe_send(media_message(self.stream_sid, pcm))
+
     async def _barge_in(self) -> None:
         """Caller spoke over the agent: stop the reply and clear the provider's audio buffer."""
+        self._play_until = time.monotonic()
         await self.cancel()
         self._filler_task = None  # reset so next speech_end can restart filler loop
         await self._safe_send(clear_message(self.stream_sid))
@@ -339,7 +356,7 @@ class StreamSession:
                                 with suppress(asyncio.CancelledError, Exception):
                                     await self._filler_task
                             self._filler_task = None
-                        await self._safe_send(media_message(self.stream_sid, frame))
+                        await self._send_agent_audio(frame)
                         if not first_sent:
                             print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
                             self._log_reply_gap()
@@ -347,14 +364,14 @@ class StreamSession:
                         total_bytes += len(frame)
                         await asyncio.sleep(frame_dur)
                 if buf:
-                    await self._safe_send(media_message(self.stream_sid, buf))
+                    await self._send_agent_audio(buf)
                     total_bytes += len(buf)
                     await asyncio.sleep(len(buf) / (8000 * 2))
             else:
                 audio = await self.tts.synthesize(text, self.language, self.voice_tier)
                 chunks = [audio[i:i + frame_bytes] for i in range(0, len(audio), frame_bytes)]
                 for chunk in chunks:
-                    await self._safe_send(media_message(self.stream_sid, chunk))
+                    await self._send_agent_audio(chunk)
                     if not first_sent:
                         print(f"[TTS] first chunk sent at {time.time()-t0:.2f}s")
                         self._log_reply_gap()
@@ -374,7 +391,7 @@ class StreamSession:
         frame_bytes = 8000 * 2 // 5
         for i in range(0, len(pcm), frame_bytes):
             chunk = pcm[i:i + frame_bytes]
-            await self._safe_send(media_message(self.stream_sid, chunk))
+            await self._send_agent_audio(chunk)
             await asyncio.sleep(len(chunk) / (8000 * 2))
         import time as _time
         self._echo_until = _time.monotonic() + 0.2
