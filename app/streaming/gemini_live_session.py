@@ -16,6 +16,7 @@ import numpy as np
 import websockets
 from scipy.signal import firwin, lfilter
 
+from app.streaming.echo_gate import frame_levels
 from app.streaming.protocol import clear_message
 from app.streaming.realtime_cost import GeminiUsage
 from app.streaming.realtime_session import _HEADERS_KW, END_OF_TURN_SILENCE_MS, GOODBYE_ASK, TOOLS, RealtimeSession
@@ -25,6 +26,7 @@ GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelan
 GEMINI_VOICES = {"female": "Kore", "male": "Charon"}
 LANGUAGE_CODES = {"te": "te-IN", "hi": "hi-IN", "en": "en-IN", "ta": "ta-IN", "kn": "kn-IN"}
 FUNCTIONS = [{"name": tool["name"], "description": tool["description"]} for tool in TOOLS]
+CALLER_VOICE_LEVEL = 500.0  # frame RMS above line hiss (~50-200): the caller is talking
 HANG_UP_WAIT_SECONDS = 5.0  # how long to wait for the model to finish its goodbye after end_call
 
 
@@ -71,7 +73,12 @@ class GeminiLiveSession(RealtimeSession):
         self.frames_received += 1
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
-        audio = {"data": base64.b64encode(self._without_echo(frame)).decode(), "mimeType": "audio/pcm;rate=8000"}
+        heard = self._without_echo(frame)
+        if heard and frame_levels(heard).max() >= CALLER_VOICE_LEVEL:
+            # Gemini sends the caller's words only after they stop, so without this the "are you still
+            # there?" check fires while they are mid-sentence.
+            self._quiet_since = time.monotonic()
+        audio = {"data": base64.b64encode(heard).decode(), "mimeType": "audio/pcm;rate=8000"}
         await self._send_json({"realtimeInput": {"audio": audio}})
 
     # ---- Gemini socket ---------------------------------------------------
