@@ -53,6 +53,12 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "register_opt_out",
+        "description": "Record that the caller asked not to be called again, so they are never called again.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "type": "function",
         "name": "end_call",
         "description": "Hang up. Call this only after you have said a short goodbye out loud.",
         "parameters": {"type": "object", "properties": {}, "required": []},
@@ -61,13 +67,13 @@ TOOLS = [
 
 # Built from humanize.md: change that file first, then mirror it here.
 _STYLE = """# Role and objective
-- You are on a live phone call, talking, not reading. Sound like the person who runs this business calling someone personally: relaxed, direct and warm.
+- You are on a live phone call, talking, not reading. {role}
 - {tone}
 
 # Personality and tone
-- Friendly and down to earth; never formal, never fawning, never like a call centre.
+- {personality}
 - {address}
-- Let your voice carry feeling: smile when you greet, sound pleased when they agree, soften when they are unsure or busy.
+- {feeling}
 
 # Language
 - {language_rule}
@@ -75,7 +81,7 @@ _STYLE = """# Role and objective
 - Say prices, dates and times the way people say them aloud ({spoken_example}), never digit by digit.
 
 # Pacing and length
-- SPEAK AT A BRISK, NATURAL PHONE PACE: quick and lively, never slow or drawn out.
+- {pace}
 - ONE OR TWO SHORT SENTENCES PER REPLY, about fifteen words, then stop and let them talk. Never a speech or a list.
 - One fact at a time: answer exactly what they asked and let them ask for more.
 - A simple question gets a simple answer; one short sentence is a complete reply.
@@ -115,12 +121,44 @@ _STYLE = """# Role and objective
 
 # Tools
 - book_appointment: when they agree to a visit or meeting, confirm the exact day and time in one short sentence and call this in the same turn. If they agreed and it is not booked yet, book it before you say goodbye.
+- register_opt_out: the moment they ask not to be called again, call this, confirm in one short sentence that they will not be called again, say goodbye, then call end_call.
 - end_call: when the conversation is finished, they say goodbye, or they are not interested, say one short goodbye out loud first, then call it."""
+
+# How the voice carries itself, by speaking style. The humanized lines say "never formal" and "brisk and
+# lively", which overruled the professional tone line on real calls (call 120), so professional has its own.
+_HUMANIZED_VOICE = {
+    "role": "Sound like the person who runs this business calling someone personally: relaxed, direct and warm.",
+    "personality": "Friendly and down to earth; never formal, never fawning, never like a call centre.",
+    "feeling": "Let your voice carry feeling: smile when you greet, sound pleased when they agree, soften when they are unsure or busy.",
+    "pace": "SPEAK AT A BRISK, NATURAL PHONE PACE: quick and lively, never slow or drawn out.",
+    "mini_role": "relaxed, warm and direct, like the owner calling, never a call centre",
+}
+_PROFESSIONAL_VOICE = {
+    "role": "Sound like a senior representative of this business: composed, confident and courteous.",
+    "personality": (
+        "Polished and respectful, never stiff, scripted or fawning, never like a call centre. Speak in complete, "
+        "respectful sentences, with no slang and no exclamations. If they challenge or "
+        "criticise you, stay calm: answer briefly and confidently, apologise at most once in the whole call, and never make excuses or blame the line, the network or a technical problem."
+    ),
+    "feeling": (
+        "Keep one calm, steady voice for the whole call: warm but measured, with no big swings in pitch, energy or "
+        "accent. Never giggle, gasp or sound excited."
+    ),
+    "pace": "SPEAK AT A STEADY, CLEAR PHONE PACE: unhurried and easy to follow, every word said fully, never rushed or drawn out.",
+    "mini_role": "composed, courteous and confident, like a senior representative, never a call centre",
+}
+_VOICE_BY_STYLE = {"professional": _PROFESSIONAL_VOICE}
+
+
+def voice_lines(speaking_style: str) -> dict[str, str]:
+    """The role, personality, feeling and pace lines of the prompt for this speaking style."""
+    return _VOICE_BY_STYLE.get(speaking_style, _HUMANIZED_VOICE)
+
 
 # The mini models garble long rule lists, so they get this short brief instead of _STYLE, in any language.
 # Built from humanize.md like _STYLE; it names no kind of business so it works for any agent's brief.
 _MINI_STYLE = """# Who you are
-- A live phone call for the business in your brief: relaxed, warm and direct, like the owner calling, never a call centre.
+- A live phone call for the business in your brief: {mini_role}.
 - {tone}
 - {address}{respect_rule}
 
@@ -150,6 +188,7 @@ _MINI_STYLE = """# Who you are
 
 # Actions
 - They agree to an appointment, visit or meeting: in the same reply confirm it as done, saying back exactly the day and time they said, and call book_appointment.
+- Asked not to call again: register_opt_out, confirm it, then bye and end_call.
 - When the conversation is done, or they say bye: one short goodbye whose last word is "bye", then call end_call. Never say good night or good morning."""
 
 _MINI_LANGUAGE_STYLES = {
@@ -376,7 +415,7 @@ def is_goodbye(text: str) -> bool:
     return any(w in _GOODBYE_WORDS for w in words[-_GOODBYE_TAIL_WORDS:] if w)
 
 
-def _mini_style(language: str, language_style: str, tone: str, address: str) -> str:
+def _mini_style(language: str, language_style: str, tone: str, address: str, speaking_style: str = "humanized") -> str:
     """The short brief for mini models, in the agent's language and language style."""
     if language == "en":
         rule = _ENGLISH_RULE + " Keep product and service names as they appear in your brief."
@@ -391,6 +430,7 @@ def _mini_style(language: str, language_style: str, tone: str, address: str) -> 
     if language_style == "english_heavy":
         samples = _SAMPLE_PHRASES_ENGLISH_HEAVY.get(language, samples)
     return _MINI_STYLE.format(
+        mini_role=voice_lines(speaking_style)["mini_role"],
         tone=tone,
         address=address,
         respect_rule=_RESPECT_RULES.get(language, ""),
@@ -494,9 +534,14 @@ class RealtimeSession:
         lang_display = LANGUAGE_NAMES.get(language, "the caller's language")
         tone = "\n- ".join(persona(name, speaking_style, creativity))
         if "mini" in model:
-            style = _mini_style(language, language_style, tone, address)
+            style = _mini_style(language, language_style, tone, address, speaking_style)
         else:
+            lines = voice_lines(speaking_style)
             style = _STYLE.format(
+                role=lines["role"],
+                personality=lines["personality"],
+                feeling=lines["feeling"],
+                pace=lines["pace"],
                 language_rule=rule,
                 tone=tone,
                 reactions=reactions,
@@ -593,6 +638,8 @@ class RealtimeSession:
                     await task
 
     def outcome(self) -> str:
+        if "register_opt_out" in self.actions:
+            return "do_not_call"
         if "book_appointment" in self.actions:
             return "appointment_booked"
         if self.ended:

@@ -84,9 +84,9 @@
 | Setting | OpenAI | Gemini |
 |---|---|---|
 | Model | `gpt-realtime-mini` (all tiers, since 2026-11-21) | `gemini-3.8-live` |
-| Voice | `marin` (female), `echo` (male, closest to the owner's reference voice; `VA_MALE_VOICE` overrides) | `Kore` (female), `Charon` (male) |
+| Voice | `marin` (female), `echo` (male, closest to the owner's reference voice; `VA_MALE_VOICE` overrides) | `Gacrux` (female, deep and mature; was `Kore`), `Charon` (male) |
 | Turn detection | `server_vad`, 500 ms | automatic activity detection, 500 ms |
-| Speed | Speech Rate 1.05–1.15× | prompt asks for a brisk pace |
+| Speed | Speech Rate 1.05–1.15× | prompt asks for a brisk pace (a steady, clear one for the professional style) |
 | Language pin | prompt | prompt + `te-IN` + Telugu transcription |
 | Cost per minute (measured) | ~₹9–10 | ~₹3.5–4 |
 
@@ -153,6 +153,10 @@
   - Test: ten Telugu caller lines (male voice, phone-band audio, asked after the pitch) through the real session, graded by a judge that knows the product. Live setup 21/30 right (5 wrong product); new prompt with the old script 22/30 (5 wrong product, one made-up price); new prompt with a voice-agent script 30/30.
   - Pronunciation did not move: 19–25% of words garbled for marin, coral, shimmer and sage, natural mix or English-heavy, all within the test's noise. "Indraam" is still said wrongly sometimes even when spelled ఇంద్రామ్. This is the limit of OpenAI's realtime Telugu voices.
   - Hearing: on phone-band audio the transcription caught the caller's words well; the misunderstanding was what the agent knew, not what it heard.
+- **2026-11-25, the professional style** (the owner: "make it sound professional"):
+  - Agents set to "Professional" still got the humanized lines ("relaxed, direct and warm", "never formal", "brisk and lively", "smile when you greet"), which overruled the one professional tone line. On call 120 (Gemini) the agent apologised three times, blamed a voice change on "a connection issue", and the caller heard its voice change mid-call.
+  - Now each speaking style has its own role, personality, feeling and pace lines (`voice_lines` in `realtime_session.py`). Professional: a senior representative, composed, confident and courteous; one calm, steady voice for the whole call with no big swings in pitch or energy; a steady, clear pace; apologise at most once and never make excuses. Humanized, casual and energetic are unchanged.
+- **2026-11-26, a more professional voice:** the professional style also asks for complete, respectful sentences with no slang or exclamations. Six Gemini female voices rendered the same sales call; pitch steadiness was about the same for all (10–13 semitones), and temperature 0.6 did not make any steadier. The owner picked `Gacrux` (deep and mature, ~136 Hz against Kore's ~216 Hz) by ear.
 
 ## Sources
 
