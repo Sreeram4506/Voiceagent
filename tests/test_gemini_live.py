@@ -229,7 +229,7 @@ def test_opt_out_tool_is_offered_and_marks_the_call_do_not_call():
     assert session.outcome() == "do_not_call"
 
 
-def test_female_agent_speaks_with_the_professional_gacrux_voice():
+def test_female_agent_speaks_with_the_aoede_voice():
     session = GeminiLiveSession("key", "Sell plots.", "te", model="gemini-3.8-live", voice_gender="female")
     voice = session._setup_message()["setup"]["generationConfig"]["speechConfig"]["voiceConfig"]
-    assert voice == {"prebuiltVoiceConfig": {"voiceName": "Gacrux"}}
+    assert voice == {"prebuiltVoiceConfig": {"voiceName": "Aoede"}}
