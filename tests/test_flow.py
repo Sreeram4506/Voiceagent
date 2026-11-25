@@ -210,3 +210,21 @@ def test_refused_call_not_in_dialed_report(session, tenant, employee):
     report = dispatch_due(session, telephony, InMemoryDNDRegistry(), NOON_IST_UTC, "cb", 30)
     assert report.dialed == []
     assert "+919999900009" not in report.dialed
+
+
+def test_caller_who_opts_out_is_never_called_again(session, tenant, employee):
+    from app.services.call_engine import CallResult
+    top_up(session, tenant.id, 100)
+    lead = add_lead(session, tenant, employee, "+919999900011")
+    call = Call(tenant_id=tenant.id, lead_id=lead.id, employee_id=employee.id, status=CallStatus.CONNECTED, started_at=NOON_IST_UTC)
+    session.add(call)
+    session.flush()
+
+    res = CallResult(outcome="do_not_call", summary="Opted out", actions=["register_opt_out", "end_call"])
+    finalize_call(session, call, employee, lead, res, connected_seconds=20, now=NOON_IST_UTC)
+    lead.next_attempt_at = NOON_IST_UTC
+    session.flush()
+
+    assert lead.status == LeadStatus.DNC
+    report = dispatch_due(session, MockTelephony(), InMemoryDNDRegistry(), NOON_IST_UTC, "cb", 30)
+    assert "+919999900011" not in report.dialed

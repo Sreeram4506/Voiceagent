@@ -48,7 +48,7 @@ def test_setup_asks_for_telugu_audio_with_the_agent_prompt_and_tools():
     assert setup["generationConfig"]["speechConfig"]["languageCode"] == "te-IN"
     assert setup["inputAudioTranscription"] == {"languageCodes": ["te-IN"]}
     assert "Book a site visit." in setup["systemInstruction"]["parts"][0]["text"]
-    assert {f["name"] for f in setup["tools"][0]["functionDeclarations"]} == {"book_appointment", "end_call"}
+    assert {f["name"] for f in setup["tools"][0]["functionDeclarations"]} == {"book_appointment", "register_opt_out", "end_call"}
 
 
 def test_greeting_made_before_pickup_plays_at_8_khz_when_the_phone_attaches():
@@ -184,3 +184,52 @@ def test_line_hiss_does_not_count_as_the_caller_talking():
         assert session._silent_for(__import__("time").monotonic()) >= 5.0
 
     asyncio.run(scenario())
+
+
+def audio_sent(to_gemini: list[dict]) -> int:
+    return sum(1 for message in to_gemini if "realtimeInput" in message)
+
+
+def test_agent_echo_is_not_sent_to_gemini():
+    """Gemini bills every second of audio it is sent, and re-bills it on each later reply as context."""
+    async def scenario():
+        session, to_gemini, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        session._play_until = __import__("time").monotonic() + 5  # the agent is talking
+        sent_before = audio_sent(to_gemini)
+        for _ in range(10):
+            await session.on_audio(caller_voice(150))  # its own voice, faint, coming back down the line
+        assert audio_sent(to_gemini) == sent_before
+
+    asyncio.run(scenario())
+
+
+def test_caller_pauses_still_reach_gemini_so_it_hears_the_end_of_their_turn():
+    async def scenario():
+        session, to_gemini, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        session._play_until = 0.0  # the agent is quiet
+        sent_before = audio_sent(to_gemini)
+        await session.on_audio(caller_voice(80))
+        await session.on_audio(bytes(320))  # digital silence from the line
+        assert audio_sent(to_gemini) == sent_before + 2
+
+    asyncio.run(scenario())
+
+
+def test_opt_out_tool_is_offered_and_marks_the_call_do_not_call():
+    from app.streaming.realtime_session import TOOLS
+    assert "register_opt_out" in [tool["name"] for tool in TOOLS]
+    session = make_session()[0]
+    session.actions.extend(["book_appointment", "register_opt_out"])
+    assert session.outcome() == "do_not_call"
+
+
+def test_female_agent_speaks_with_the_professional_gacrux_voice():
+    session = GeminiLiveSession("key", "Sell plots.", "te", model="gemini-3.8-live", voice_gender="female")
+    voice = session._setup_message()["setup"]["generationConfig"]["speechConfig"]["voiceConfig"]
+    assert voice == {"prebuiltVoiceConfig": {"voiceName": "Gacrux"}}
