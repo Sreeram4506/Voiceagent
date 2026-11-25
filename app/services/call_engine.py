@@ -14,6 +14,8 @@ from app.providers.base import AgentReply, LLMProvider, TTSProvider
 from app.services.billing import charge_call
 
 MAX_TURNS = 40
+# A booking whose time the agent did not pass is still saved, a day after the call, for the team to fix.
+BOOKING_FALLBACK_HOURS = 24
 
 
 @dataclass
@@ -21,6 +23,7 @@ class CallResult:
     outcome: str
     summary: str
     actions: list[str] = field(default_factory=list)
+    appointment_at: datetime | None = None  # agreed slot in UTC; None when the agent gave no usable time
 
 
 def run_turns(
@@ -58,7 +61,7 @@ def run_turns(
     lead = session.get(Lead, call.lead_id) if call.lead_id else None
     if booked:
         outcome = "appointment_booked"
-        _persist_appointment(session, call, employee, lead)
+        _persist_appointment(session, call, employee, lead, datetime.utcnow() + timedelta(hours=BOOKING_FALLBACK_HOURS))
     elif ended_by_agent:
         outcome = "completed"
     else:
@@ -91,11 +94,14 @@ def finalize_call(
     if result.outcome == "appointment_booked" or "book_appointment" in (result.actions or []):
         existing = session.query(Appointment).filter(Appointment.call_id == call.id).first()
         if not existing:
-            _persist_appointment(session, call, employee, lead)
+            when = result.appointment_at or now + timedelta(hours=BOOKING_FALLBACK_HOURS)
+            if result.appointment_at is None:
+                print(f"[Booking] call {call.id}: no agreed time from the agent, saved {BOOKING_FALLBACK_HOURS} h ahead")
+            _persist_appointment(session, call, employee, lead, when)
     return charged
 
 
-def _persist_appointment(session: Session, call: Call, employee: AIEmployee, lead: Lead | None) -> None:
+def _persist_appointment(session: Session, call: Call, employee: AIEmployee, lead: Lead | None, when: datetime) -> None:
     name = ""
     phone = ""
     if lead is not None:
@@ -105,7 +111,6 @@ def _persist_appointment(session: Session, call: Call, employee: AIEmployee, lea
         cf = call.captured_fields or {}
         name = str(cf.get("name") or "")
         phone = str(cf.get("phone") or "")
-    when = datetime.utcnow() + timedelta(hours=24)
     session.add(
         Appointment(
             tenant_id=call.tenant_id,

@@ -45,6 +45,13 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _utc_iso(moment: datetime | None) -> str | None:
+    """Appointment times are stored as UTC without a zone; say so, or the browser reads them as local time."""
+    if moment is None:
+        return None
+    return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).isoformat()
+
+
 def _require_tid(request: Request) -> int:
     from app.auth import require_tenant_id
     return require_tenant_id(request)
@@ -271,7 +278,7 @@ def overview(request: Request):
                 "id": next_appt.id,
                 "name": next_appt.contact_name,
                 "phone": next_appt.phone,
-                "when": next_appt.scheduled_at.isoformat() if next_appt.scheduled_at else None,
+                "when": _utc_iso(next_appt.scheduled_at),
                 "notes": next_appt.notes,
             } if next_appt else None,
             "appointments_today": remaining_today,
@@ -924,7 +931,7 @@ def list_appointments(request: Request):
                 "id": a.id,
                 "name": a.contact_name,
                 "phone": a.phone,
-                "scheduled_at": a.scheduled_at.isoformat() if a.scheduled_at else None,
+                "scheduled_at": _utc_iso(a.scheduled_at),
                 "status": a.status.value,
                 "notes": a.notes,
                 "call_id": a.call_id,

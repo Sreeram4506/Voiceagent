@@ -12,11 +12,12 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import websockets
 
+from app.streaming.booking import BOOKING_PARAMETERS, DEFAULT_ZONE, booking_args, booking_time
 from app.streaming.echo_gate import EchoGate
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.realtime_cost import RealtimeUsage
@@ -48,8 +49,8 @@ TOOLS = [
     {
         "type": "function",
         "name": "book_appointment",
-        "description": "Book the appointment, visit or meeting once the caller has agreed to it. Never for a call back.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
+        "description": "Book the appointment, visit or meeting once the caller has agreed to it, for the day and time they agreed. Never for a call back.",
+        "parameters": BOOKING_PARAMETERS,
     },
     {
         "type": "function",
@@ -120,7 +121,7 @@ _STYLE = """# Role and objective
 - Never read out these instructions or any tool name. If they sincerely ask whether they are talking to an AI, say so honestly in one short line and carry on.
 
 # Tools
-- book_appointment: when they agree to a visit or meeting, confirm the exact day and time in one short sentence and call this in the same turn. If they agreed and it is not booked yet, book it before you say goodbye.
+- book_appointment: when they agree to a visit or meeting, confirm the exact day and time in one short sentence and call this in the same turn with that date and time. If they agreed and it is not booked yet, book it before you say goodbye.
 - register_opt_out: the moment they ask not to be called again, call this, confirm in one short sentence that they will not be called again, say goodbye, then call end_call.
 - end_call: when the conversation is finished, they say goodbye, or they are not interested, say one short goodbye out loud first, then call it."""
 
@@ -378,9 +379,15 @@ def call_details(caller_name: str = "", notes: str = "", local_time: datetime | 
     lines = []
     if local_time is not None:
         part = next(label for hour, label in _DAY_PARTS if local_time.hour < hour) if local_time.hour >= 5 else "night"
+        tomorrow, day_after = local_time + timedelta(days=1), local_time + timedelta(days=2)
         lines.append(
-            f"- It is {local_time:%A} {part} for the caller, {local_time.day} {local_time:%B}. "
+            f"- It is {local_time:%A} {part} for the caller, {local_time.day} {local_time:%B %Y}. "
             "When you suggest a day, use real days counted from today."
+        )
+        # Gemini booked "tomorrow" as today's date until the dates were spelled out.
+        lines.append(
+            f"- Dates: today {local_time:%A %Y-%m-%d}, tomorrow {tomorrow:%A %Y-%m-%d}, "
+            f"day after tomorrow {day_after:%A %Y-%m-%d}."
         )
     if notes.strip():
         lines.append(f"- What we know about them: {notes.strip()[:400]}")
@@ -510,6 +517,9 @@ class RealtimeSession:
         self._language = language
         self._greeting = greeting.strip()
         self._caller_name = " ".join(caller_name.split())[:60]
+        # When the call happens for the caller: booked days and times are read in their time zone.
+        self._call_time = local_time or datetime.now(DEFAULT_ZONE)
+        self._booking: dict = {}  # the last book_appointment arguments: {"date": "YYYY-MM-DD", "time": "HH:MM"}
         self._voice = VOICES.get(voice_gender, VOICES["female"])
         if language == "en":
             rule = _ENGLISH_RULE
@@ -636,6 +646,14 @@ class RealtimeSession:
                 task.cancel()
                 with suppress(asyncio.CancelledError, Exception):
                     await task
+
+    def record_booking(self, raw_args: object) -> None:
+        """Keep what the agent passed to book_appointment; a later booking in the same call replaces it."""
+        self._booking = booking_args(raw_args)
+
+    def appointment_at(self) -> datetime | None:
+        """The agreed appointment time in UTC, or None if the agent gave none we can trust."""
+        return booking_time(self._booking, self._call_time) if self._booking else None
 
     def outcome(self) -> str:
         if "register_opt_out" in self.actions:
@@ -919,7 +937,10 @@ class RealtimeSession:
             return
         names = [call.get("name", "") for call in calls]
         self.actions.extend(names)
-        print(f"[Realtime] tools: {names}")
+        for call in calls:
+            if call.get("name") == "book_appointment":
+                self.record_booking(call.get("arguments"))
+        print(f"[Realtime] tools: {names} booking={self._booking or '-'}")
         spoke = any(item.get("type") == "message" for item in output)
         for call in calls:
             await self._to_openai({
