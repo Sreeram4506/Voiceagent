@@ -363,6 +363,7 @@ class CallRecord:
     connected_seconds: int
     cost_usd: float | None = None
     usage_report: str = ""
+    provider: str = "OpenAI"  # who ran the call, named next to its cost in the summary
 
 
 def _record_of(session: LiveSession) -> CallRecord:
@@ -375,6 +376,7 @@ def _record_of(session: LiveSession) -> CallRecord:
         connected_seconds=session.frames_received * FRAME_MS // 1000,
         cost_usd=session.cost_usd() if realtime else None,
         usage_report=session.usage_report() if realtime else "",
+        provider="Gemini" if isinstance(session, GeminiLiveSession) else "OpenAI",
     )
 
 
@@ -426,7 +428,7 @@ def _persist(call_id: int, record: CallRecord | None) -> None:
         if record.usage_report:
             print(f"[Cost] call {call_id} {record.usage_report}")
         if record.cost_usd is not None:
-            summary += f"; OpenAI ${record.cost_usd:.4f}"
+            summary += f"; {record.provider} ${record.cost_usd:.4f}"
         result = CallResult(outcome=record.outcome, summary=summary, actions=list(record.actions))
         finalize_call(db, call, employee, lead, result, connected_seconds=record.connected_seconds,
                       now=datetime.utcnow())

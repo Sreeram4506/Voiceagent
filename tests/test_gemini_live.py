@@ -153,3 +153,41 @@ def test_downsampling_keeps_every_third_sample_across_uneven_chunks():
     down = Downsampler()
     out = b"".join(down(tone[i:i + size]) for i, size in ((0, 1000), (1000, 2002), (3002, 1798)))
     assert len(out) == 800 * 2  # 2400 samples at 24 kHz -> 800 at 8 kHz
+
+
+def caller_voice(level: float, seconds: float = 0.02) -> bytes:
+    t = np.arange(int(8000 * seconds))
+    return (np.sin(t * 0.3) * level * np.sqrt(2)).astype("<i2").tobytes()
+
+
+def test_caller_talking_holds_off_the_are_you_there_check():
+    async def scenario():
+        session, _, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0  # past the greeting
+        session._quiet_since -= 10  # the agent finished long ago; Gemini has not sent the caller's words yet
+        await session.on_audio(caller_voice(2000))
+        assert session._silent_for(__import__("time").monotonic()) < 1.0
+
+    asyncio.run(scenario())
+
+
+def test_line_hiss_does_not_count_as_the_caller_talking():
+    async def scenario():
+        session, _, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        session._quiet_since -= 10
+        await session.on_audio(caller_voice(80))
+        assert session._silent_for(__import__("time").monotonic()) >= 5.0
+
+    asyncio.run(scenario())
+
+
+def test_saved_call_record_names_gemini_as_the_provider():
+    from app.streaming.ws import _record_of
+
+    session = make_session()[0]
+    assert _record_of(session).provider == "Gemini"

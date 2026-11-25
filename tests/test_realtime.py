@@ -14,6 +14,10 @@ def agent_audio(item_id: str, seconds: float) -> dict:
     return {"type": "response.output_audio.delta", "item_id": item_id, "delta": base64.b64encode(ulaw).decode()}
 
 
+# Language-style rules apply to the full models; mini models get a short plain-Telugu brief instead.
+FULL_MODEL = "gpt-realtime-1.5"
+
+
 def make_session(**kwargs):
     session = RealtimeSession("key", "Book a site visit.", "te", **kwargs)
     to_openai: list[dict] = []
@@ -43,6 +47,7 @@ def test_ulaw_round_trip_stays_close_to_the_original():
 def test_greeting_made_before_pickup_plays_the_moment_the_phone_attaches():
     async def scenario():
         session, to_openai, to_phone, send, end, _ = make_session(greeting="నమస్కారం అండి")
+        await session._configure()  # settings, then the greeting request right behind them
         await session._on_event({"type": "session.updated"})
         assert to_openai[-1]["type"] == "response.create"
         assert "నమస్కారం అండి" in to_openai[-1]["response"]["instructions"]
@@ -197,7 +202,7 @@ def test_silent_line_gets_two_check_ins_and_then_a_polite_goodbye():
 
 
 def test_telugu_natural_mix_uses_swap_list_and_examples():
-    session, *_ = make_session(language_style="natural_mix")
+    session, *_ = make_session(language_style="natural_mix", model=FULL_MODEL)
     assert "టైమ్" in session._instructions
     assert "రేట్" in session._instructions
     assert "సైట్ విజిట్" in session._instructions
@@ -207,13 +212,13 @@ def test_telugu_natural_mix_uses_swap_list_and_examples():
 
 
 def test_telugu_pure_style_avoids_english():
-    session, *_ = make_session(language_style="pure")
+    session, *_ = make_session(language_style="pure", model=FULL_MODEL)
     assert "pure, natural Telugu" in session._instructions
     assert "టైమ్" not in session._instructions
 
 
 def test_telugu_english_heavy_style():
-    session, *_ = make_session(language_style="english_heavy")
+    session, *_ = make_session(language_style="english_heavy", model=FULL_MODEL)
     assert "lean heavily on English" in session._instructions
 
 
@@ -276,5 +281,93 @@ def test_model_without_a_known_price_reports_tokens_but_no_cost():
         await session._on_event({"type": "response.done", "response": {"status": "completed", "usage": REPLY_USAGE}})
         assert session.cost_usd() is None
         assert "no price known" in session.usage_report() and "audio out 300" in session.usage_report()
+
+    asyncio.run(scenario())
+
+
+def _goodbye_reply(session, text: str):
+    async def play():
+        await session._on_event(agent_audio("bye", 0.1))
+        await session._on_event({"type": "response.output_audio_transcript.done", "item_id": "bye", "transcript": text})
+        await session._on_event({"type": "response.done", "response": {
+            "status": "completed", "output": [{"type": "message", "role": "assistant"}]}})
+    return play()
+
+
+def test_agent_hangs_up_after_its_own_goodbye_even_without_the_tool():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await _goodbye_reply(session, "సరే అండి, థాంక్యూ, bye!")
+        await asyncio.sleep(0.6)
+        assert ended and session.ended
+
+    asyncio.run(scenario())
+
+
+def test_bye_in_the_middle_of_a_reply_does_not_hang_up():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await _goodbye_reply(session, "Bye చెప్పే ముందు, ఒక్క విషయం అండి, Saturday ఓకేనా?")
+        await asyncio.sleep(0.6)
+        assert not ended
+        await session.cancel()
+
+    asyncio.run(scenario())
+
+
+def speech(level: float, seconds: float = 0.02) -> bytes:
+    t = np.arange(int(8000 * seconds))
+    return (np.sin(t * 0.3) * level * np.sqrt(2)).astype("<i2").tobytes()
+
+
+def agent_speech(item_id: str, seconds: float, level: float = 3000.0) -> dict:
+    ulaw = pcm_to_ulaw(speech(level, seconds))
+    return {"type": "response.output_audio.delta", "item_id": item_id, "delta": base64.b64encode(ulaw).decode()}
+
+
+def sent_audio(to_openai: list[dict]) -> list[bytes]:
+    return [ulaw_to_pcm(base64.b64decode(e["audio"])) for e in to_openai if e["type"] == "input_audio_buffer.append"]
+
+
+def test_echo_of_the_agents_own_voice_reaches_openai_as_silence():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session._on_event(agent_speech("a1", 5.0))
+        await session.on_audio(speech(3000 * 0.15))  # the phone leaking the agent back
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() < 50
+
+    asyncio.run(scenario())
+
+
+def test_caller_talking_over_the_agent_still_reaches_openai():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session._on_event(agent_speech("a1", 5.0))
+        for _ in range(3):
+            await session.on_audio(speech(2500))
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() > 1500
+
+    asyncio.run(scenario())
+
+
+def test_quiet_caller_is_heard_once_the_agent_has_finished():
+    async def scenario():
+        session, to_openai, _, send, end, _ = make_session()
+        session._ws = object()
+        await session.attach("sid", send, end)
+        session._guard_until = 0.0
+        await session.on_audio(speech(300))  # nothing playing: even a soft "హా" goes through
+        heard = np.frombuffer(sent_audio(to_openai)[-1], dtype="<i2")
+        assert np.abs(heard).max() > 200
 
     asyncio.run(scenario())
