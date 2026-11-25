@@ -1,6 +1,7 @@
 """Chooses speech and LLM providers for a call.
 
-Default: OpenAI Realtime speech-to-speech (see realtime_session.py). The STT/LLM/TTS
+Default: Gemini Live speech-to-speech (gemini_live_session.py), or OpenAI Realtime (realtime_session.py)
+with VA_VOICE_ENGINE=openai or when no GEMINI_API_KEY is set. The STT/LLM/TTS
 relay below is the fallback when Realtime is unavailable, serves voice_clone agents,
 and can be forced with VA_VOICE_PIPELINE=classic to save cost.
 
@@ -87,7 +88,7 @@ def _build_tts(employee, openai_key, extras=None):
 
 
 def use_realtime(voice_tier: str, mode: str) -> bool:
-    """Speech-to-speech over OpenAI Realtime is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay."""
+    """Live speech-to-speech (Gemini or OpenAI, see voice_engine) is the default. Set VA_VOICE_PIPELINE=classic for the cheaper relay."""
     if os.getenv("TESTING") == "1" or os.getenv("VA_VOICE_PIPELINE", "realtime") == "classic":
         return False
     key = "GEMINI_API_KEY" if voice_engine() == "gemini" else "OPENAI_API_KEY"
@@ -95,8 +96,13 @@ def use_realtime(voice_tier: str, mode: str) -> bool:
 
 
 def voice_engine() -> str:
-    """Which speech-to-speech service runs calls: "openai" (default) or "gemini" (VA_VOICE_ENGINE=gemini)."""
-    return os.getenv("VA_VOICE_ENGINE", "openai").strip().lower()
+    """Which speech-to-speech service runs calls. Gemini Live is the default: on real calls it sounded the most
+    natural in Telugu. VA_VOICE_ENGINE=openai brings back OpenAI Realtime, which also runs calls when no
+    GEMINI_API_KEY is set, so a server without the key keeps its live voice instead of the slower relay."""
+    chosen = os.getenv("VA_VOICE_ENGINE", "").strip().lower()
+    if chosen:
+        return chosen
+    return "gemini" if os.getenv("GEMINI_API_KEY") else "openai"
 
 
 def build_providers(employee, extras=None):
