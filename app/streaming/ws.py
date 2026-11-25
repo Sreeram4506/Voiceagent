@@ -369,7 +369,8 @@ def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAu
             print(f"[Cost] call {call_id} {session.usage_report()}")
             cost = session.cost_usd()
             if cost is not None:
-                summary += f"; OpenAI ${cost:.4f}"
+                provider = "Gemini" if isinstance(session, GeminiLiveSession) else "OpenAI"
+                summary += f"; {provider} ${cost:.4f}"
         result = CallResult(outcome=session.outcome(), summary=summary, actions=session.actions)
         connected_seconds = session.frames_received * FRAME_MS // 1000
         finalize_call(db, call, employee, lead, result, connected_seconds=connected_seconds, now=datetime.utcnow())
