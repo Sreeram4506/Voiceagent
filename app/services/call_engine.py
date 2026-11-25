@@ -85,7 +85,9 @@ def finalize_call(
     call.billed_seconds = max(connected_seconds, 0)
     charged = charge_call(session, call.tenant_id, call.id, employee.voice_tier, call.billed_seconds)
     if lead is not None:
-        lead.status = LeadStatus.DONE
+        opted_out = result.outcome == "do_not_call" or "register_opt_out" in (result.actions or [])
+        # An opt-out is permanent: the dialer skips DNC leads, so this person is never called again.
+        lead.status = LeadStatus.DNC if opted_out else LeadStatus.DONE
     if result.outcome == "appointment_booked" or "book_appointment" in (result.actions or []):
         existing = session.query(Appointment).filter(Appointment.call_id == call.id).first()
         if not existing:

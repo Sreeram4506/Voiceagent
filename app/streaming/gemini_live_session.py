@@ -23,7 +23,8 @@ from app.streaming.realtime_session import _HEADERS_KW, END_OF_TURN_SILENCE_MS, 
 
 GEMINI_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
-GEMINI_VOICES = {"female": "Kore", "male": "Charon"}
+# Gacrux: deep and mature, picked by the owner on 2026-11-26 as the most professional of six female voices.
+GEMINI_VOICES = {"female": "Gacrux", "male": "Charon"}
 LANGUAGE_CODES = {"te": "te-IN", "hi": "hi-IN", "en": "en-IN", "ta": "ta-IN", "kn": "kn-IN"}
 FUNCTIONS = [{"name": tool["name"], "description": tool["description"]} for tool in TOOLS]
 CALLER_VOICE_LEVEL = 500.0  # frame RMS above line hiss (~50-200): the caller is talking
@@ -73,7 +74,12 @@ class GeminiLiveSession(RealtimeSession):
         self.frames_received += 1
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
+        blocked_before = self._echo_gate.blocked_frames
         heard = self._without_echo(frame)
+        if self._echo_gate.blocked_frames > blocked_before:
+            # Only the agent's own voice coming back. Gemini bills every second of audio it is sent and
+            # re-bills it as context on each later reply, so silence here is not worth sending.
+            return
         if heard and frame_levels(heard).max() >= CALLER_VOICE_LEVEL:
             # Gemini sends the caller's words only after they stop, so without this the "are you still
             # there?" check fires while they are mid-sentence.

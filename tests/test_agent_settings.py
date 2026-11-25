@@ -132,3 +132,33 @@ def test_language_style_saved_and_reaches_call(client):
 
     ctx = _load_context(call_id)
     assert _persona_settings(ctx)["language_style"] == "pure"
+
+
+def _instructions(style: str, model: str = "gpt-realtime-2.1") -> str:
+    return RealtimeSession("key", "Sell plots.", "te", model=model, speaking_style=style)._instructions
+
+
+def test_professional_style_is_not_overruled_by_the_relaxed_base_prompt():
+    text = _instructions("professional")
+    assert "senior relationship manager" in text
+    assert "composed, confident and courteous" in text
+    assert "steady voice for the whole call" in text
+    assert "apologise at most once" in text
+    assert "no slang and no exclamations" in text
+    assert "never make excuses or blame the line" in text
+    for relaxed in ("never formal", "BRISK", "quick and lively", "smile when you greet", "relaxed, direct and warm"):
+        assert relaxed not in text, relaxed
+
+
+def test_professional_style_reaches_the_short_mini_brief_too():
+    text = _instructions("professional", model=MODEL if "mini" in MODEL else "gpt-realtime-mini")
+    assert "composed, courteous and confident" in text
+    assert "relaxed, warm and direct" not in text
+
+
+def test_humanized_style_keeps_its_relaxed_warm_voice():
+    text = _instructions("humanized")
+    assert "relaxed, direct and warm" in text
+    assert "never formal" in text
+    assert "BRISK, NATURAL PHONE PACE" in text
+
