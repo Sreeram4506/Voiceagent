@@ -23,8 +23,9 @@ from app.streaming.realtime_session import _HEADERS_KW, END_OF_TURN_SILENCE_MS, 
 
 GEMINI_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
-# Gacrux: deep and mature, picked by the owner on 2026-11-26 as the most professional of six female voices.
-GEMINI_VOICES = {"female": "Gacrux", "male": "Charon"}
+# Sulafat: picked by the owner on 2026-11-26 from all 30 Gemini voices; clearly female (~229 Hz) and among the
+# steadiest. Gacrux, the earlier pick, measures about 127 Hz and sounded like a man on the phone.
+GEMINI_VOICES = {"female": "Sulafat", "male": "Charon"}
 LANGUAGE_CODES = {"te": "te-IN", "hi": "hi-IN", "en": "en-IN", "ta": "ta-IN", "kn": "kn-IN"}
 FUNCTIONS = [{"name": tool["name"], "description": tool["description"]} for tool in TOOLS]
 CALLER_VOICE_LEVEL = 500.0  # frame RMS above line hiss (~50-200): the caller is talking
