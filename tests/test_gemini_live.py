@@ -236,7 +236,14 @@ def test_opt_out_tool_is_offered_and_marks_the_call_do_not_call():
     assert session.outcome() == "do_not_call"
 
 
-def test_female_agent_speaks_with_the_professional_gacrux_voice():
+def test_female_agent_speaks_with_the_sulafat_voice():
     session = GeminiLiveSession("key", "Sell plots.", "te", model="gemini-3.8-live", voice_gender="female")
     voice = session._setup_message()["setup"]["generationConfig"]["speechConfig"]["voiceConfig"]
-    assert voice == {"prebuiltVoiceConfig": {"voiceName": "Gacrux"}}
+    assert voice == {"prebuiltVoiceConfig": {"voiceName": "Sulafat"}}
+
+
+def test_saved_call_record_keeps_the_agreed_booking_time():
+    from app.streaming.ws import _record_of
+    session = make_session()[0]
+    session.record_booking({"date": "2099-01-05", "time": "10:30"})
+    assert _record_of(session).appointment_at == __import__("datetime").datetime(2099, 1, 5, 5, 0)

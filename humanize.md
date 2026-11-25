@@ -84,7 +84,7 @@
 | Setting | OpenAI | Gemini |
 |---|---|---|
 | Model | `gpt-realtime-mini` (all tiers, since 2026-11-21) | `gemini-3.8-live` |
-| Voice | `marin` (female), `echo` (male, closest to the owner's reference voice; `VA_MALE_VOICE` overrides) | `Gacrux` (female, deep and mature; was `Kore`), `Charon` (male) |
+| Voice | `marin` (female), `echo` (male, closest to the owner's reference voice; `VA_MALE_VOICE` overrides) | `Sulafat` (female; was `Kore`, then `Gacrux`), `Charon` (male) |
 | Turn detection | `server_vad`, 500 ms | automatic activity detection, 500 ms |
 | Speed | Speech Rate 1.05–1.15× | prompt asks for a brisk pace (a steady, clear one for the professional style) |
 | Language pin | prompt | prompt + `te-IN` + Telugu transcription |
@@ -157,6 +157,7 @@
   - Agents set to "Professional" still got the humanized lines ("relaxed, direct and warm", "never formal", "brisk and lively", "smile when you greet"), which overruled the one professional tone line. On call 120 (Gemini) the agent apologised three times, blamed a voice change on "a connection issue", and the caller heard its voice change mid-call.
   - Now each speaking style has its own role, personality, feeling and pace lines (`voice_lines` in `realtime_session.py`). Professional: a senior representative, composed, confident and courteous; one calm, steady voice for the whole call with no big swings in pitch or energy; a steady, clear pace; apologise at most once and never make excuses. Humanized, casual and energetic are unchanged.
 - **2026-11-26, a more professional voice:** the professional style also asks for complete, respectful sentences with no slang or exclamations. Six Gemini female voices rendered the same sales call; pitch steadiness was about the same for all (10–13 semitones), and temperature 0.6 did not make any steadier. The owner picked `Gacrux` (deep and mature, ~136 Hz against Kore's ~216 Hz) by ear.
+- **2026-11-26, Gacrux sounded male:** on production call 238 the owner heard Gacrux as a man's voice. Recorded all 30 Gemini voices with the same lines: Gacrux measures ~127 Hz, in the male range with 15 others (112–152 Hz); ten are clearly female (205–235 Hz). The owner tried `Aoede` (~178 Hz), then settled on `Sulafat` (~229 Hz, among the steadiest) by ear. Check a voice's pitch before choosing it.
 
 ## Sources
 
