@@ -27,7 +27,24 @@ GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelan
 # steadiest. Gacrux, the earlier pick, measures about 127 Hz and sounded like a man on the phone.
 GEMINI_VOICES = {"female": "Sulafat", "male": "Charon"}
 LANGUAGE_CODES = {"te": "te-IN", "hi": "hi-IN", "en": "en-IN", "ta": "ta-IN", "kn": "kn-IN"}
-FUNCTIONS = [{"name": tool["name"], "description": tool["description"]} for tool in TOOLS]
+
+
+def _gemini_schema(schema: dict) -> dict:
+    """Gemini's function schema spells JSON types in capitals (OBJECT, STRING)."""
+    out = {**schema, "type": schema["type"].upper()}
+    if "properties" in schema:
+        out["properties"] = {key: _gemini_schema(value) for key, value in schema["properties"].items()}
+    return out
+
+
+def _function(tool: dict) -> dict:
+    function = {"name": tool["name"], "description": tool["description"]}
+    if tool["parameters"].get("properties"):
+        function["parameters"] = _gemini_schema(tool["parameters"])
+    return function
+
+
+FUNCTIONS = [_function(tool) for tool in TOOLS]
 CALLER_VOICE_LEVEL = 500.0  # frame RMS above line hiss (~50-200): the caller is talking
 HANG_UP_WAIT_SECONDS = 5.0  # how long to wait for the model to finish its goodbye after end_call
 
@@ -196,7 +213,10 @@ class GeminiLiveSession(RealtimeSession):
     async def _handle_calls(self, calls: list[dict]) -> None:
         names = [call.get("name", "") for call in calls]
         self.actions.extend(names)
-        print(f"[Gemini] tools: {names}")
+        for call in calls:
+            if call.get("name") == "book_appointment":
+                self.record_booking(call.get("args"))
+        print(f"[Gemini] tools: {names} booking={self._booking or '-'}")
         responses = [{"id": call.get("id"), "name": call.get("name"), "response": {"result": "ok"}} for call in calls]
         await self._send_json({"toolResponse": {"functionResponses": responses}})
         if "end_call" not in names or self._end_task is not None:
