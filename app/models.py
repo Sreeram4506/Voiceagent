@@ -134,6 +134,7 @@ class Call(Base):
     connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     billed_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    recording_file: Mapped[str | None] = mapped_column(String(100), nullable=True)  # WAV in VA_RECORDINGS_DIR
 
     turns: Mapped[list["CallTurn"]] = relationship(back_populates="call", order_by="CallTurn.id")
 

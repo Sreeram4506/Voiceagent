@@ -36,17 +36,14 @@ def _ensure_columns() -> None:
 
     inspector = inspect(engine)
     tables = inspector.get_table_names()
-    if "leads" not in tables:
-        return
-    cols = {c["name"] for c in inspector.get_columns("leads")}
-    if "campaign_id" not in cols:
-        dialect = engine.dialect.name
-        if dialect == "sqlite":
-            ddl = "ALTER TABLE leads ADD COLUMN campaign_id INTEGER"
-        else:
-            ddl = "ALTER TABLE leads ADD COLUMN IF NOT EXISTS campaign_id INTEGER"
+    # Columns added after a table was first created: create_all does not add them to an existing table.
+    added = (("leads", "campaign_id", "INTEGER"), ("calls", "recording_file", "VARCHAR(100)"))
+    for table, column, kind in added:
+        if table not in tables or column in {c["name"] for c in inspector.get_columns(table)}:
+            continue
+        exists = "" if engine.dialect.name == "sqlite" else "IF NOT EXISTS "
         with engine.begin() as conn:
-            conn.execute(text(ddl))
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {exists}{column} {kind}"))
 
 
 def get_session() -> Iterator[Session]:

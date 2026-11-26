@@ -15,6 +15,7 @@ from fastapi.responses import Response
 from sqlalchemy import extract, func, text
 
 from app.db import SessionLocal
+from app.streaming.call_recorder import recording_url
 from app.models import (
     AIEmployee,
     ActivityLog,
@@ -158,6 +159,7 @@ def _serialize_call(db, c: Call, include_turns: bool = False) -> dict:
         "agent": emp.name if emp else "Suma",
         "sid": c.provider_call_id or f"CA-{c.id}",
         "summary": c.summary or "",
+        "recording": recording_url(c),
     }
     if include_turns:
         turns = db.query(CallTurn).filter_by(call_id=c.id).order_by(CallTurn.id).all()
@@ -926,6 +928,8 @@ def list_appointments(request: Request):
     tid = _require_tid(request)
     with SessionLocal() as db:
         rows = db.query(Appointment).filter(Appointment.tenant_id == tid).order_by(Appointment.scheduled_at.desc()).limit(500).all()
+        call_ids = {a.call_id for a in rows if a.call_id}
+        calls = {c.id: c for c in db.query(Call).filter(Call.id.in_(call_ids))} if call_ids else {}
         return [
             {
                 "id": a.id,
@@ -935,6 +939,7 @@ def list_appointments(request: Request):
                 "status": a.status.value,
                 "notes": a.notes,
                 "call_id": a.call_id,
+                "recording": recording_url(calls[a.call_id]) if a.call_id in calls else None,
             }
             for a in rows
         ]
