@@ -202,7 +202,8 @@ def prepare_call(call_id: int) -> None:
                 raw = base64.b64decode(audio["data"])
                 pcm = await asyncio.to_thread(_to_pcm_8k, raw, audio.get("content_type", "audio/mpeg"))
                 print(f"[WS] prepared recorded audio: {len(pcm)} bytes PCM")
-                return {"type": "recorded", "pcm": pcm, "filename": audio.get("filename", "greeting.mp3")}
+                return {"type": "recorded", "pcm": pcm, "filename": audio.get("filename", "greeting.mp3"),
+                        "language": ctx.employee.language}
             return None
         realtime = _start_realtime(ctx)
         if realtime is not None or ctx is None or ctx.mode == "broadcast":
@@ -295,6 +296,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         session = RecordedAudioSession(
             pcm=result["pcm"],
             filename=result["filename"],
+            language=result.get("language", "te"),
             stream_sid=stream_sid,
             send=send,
             on_end=end,
@@ -324,6 +326,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
                     audio_b64=audio["data"],
                     content_type=audio.get("content_type", "audio/mpeg"),
                     filename=audio.get("filename", "greeting.mp3"),
+                    language=ctx.employee.language,
                     stream_sid=stream_sid,
                     send=send,
                     on_end=end,
