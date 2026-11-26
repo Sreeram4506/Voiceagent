@@ -94,6 +94,8 @@ class GeminiLiveSession(RealtimeSession):
 
     async def on_audio(self, frame: bytes) -> None:
         self.frames_received += 1
+        if self.recorder:
+            self.recorder.caller(frame)
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
         blocked_before = self._echo_gate.blocked_frames
@@ -215,6 +217,8 @@ class GeminiLiveSession(RealtimeSession):
         if self._send is None or self._play_until <= time.monotonic():
             return
         self._play_until = time.monotonic()
+        if self.recorder:
+            self.recorder.cut_agent(self._play_until)
         with suppress(RuntimeError, OSError):
             await self._send(clear_message(self.stream_sid))
 

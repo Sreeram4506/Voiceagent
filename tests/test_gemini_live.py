@@ -298,3 +298,10 @@ def test_cut_off_goodbye_does_not_hang_up_on_the_caller():
         assert not ended  # the caller cut in, so they still have something to say
 
     asyncio.run(scenario())
+
+
+def test_saved_call_record_carries_the_recording(monkeypatch, tmp_path):
+    from app.streaming.ws import _record_of
+    monkeypatch.setenv("VA_RECORDINGS_DIR", str(tmp_path))
+    session = make_session()[0]
+    assert _record_of(session).recorder is session.recorder is not None

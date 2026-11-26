@@ -5,10 +5,11 @@ import os
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 
 from app.db import SessionLocal
+from app.streaming.call_recorder import recording_path, recording_url
 from app.models import AIEmployee, Call, CallDirection, CallStatus, CallTurn, ContactList, Lead, LeadStatus
 from app.providers.factory import get_telephony
 from app.services import autodialer
@@ -150,8 +151,21 @@ def list_calls(request: Request):
                 "duration": c.billed_seconds,
                 "started": c.started_at.isoformat() if c.started_at else None,
                 "turns": [{"role": t.role, "text": t.text} for t in turns],
+                "recording": recording_url(c),
             })
         return result
+
+
+@router.get("/api/calls/{call_id}/recording")
+def call_recording(request: Request, call_id: int):
+    """The call's audio, only to a signed-in user of the same tenant."""
+    tid = _require_tid(request)
+    with SessionLocal() as db:
+        call = db.query(Call).filter(Call.id == call_id, Call.tenant_id == tid).first()
+        path = recording_path(call.recording_file) if call else None
+    if path is None:
+        raise HTTPException(status_code=404, detail="No recording for this call")
+    return FileResponse(path, media_type="audio/wav", filename=f"call_{call_id}.wav")
 
 
 @router.post("/api/add_lead")

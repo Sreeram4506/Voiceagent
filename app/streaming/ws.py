@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
+from app.streaming.call_recorder import CallRecorder, save_recording
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.gemini_live_session import GEMINI_MODEL, GeminiLiveSession
@@ -365,6 +366,7 @@ class CallRecord:
     usage_report: str = ""
     provider: str = "OpenAI"  # who ran the call, named next to its cost in the summary
     appointment_at: datetime | None = None  # the slot the caller agreed, in UTC
+    recorder: CallRecorder | None = None  # both sides of the call, when VA_RECORDINGS_DIR is set
 
 
 def _record_of(session: LiveSession) -> CallRecord:
@@ -379,7 +381,20 @@ def _record_of(session: LiveSession) -> CallRecord:
         usage_report=session.usage_report() if realtime else "",
         provider="Gemini" if isinstance(session, GeminiLiveSession) else "OpenAI",
         appointment_at=session.appointment_at() if realtime else None,
+        recorder=getattr(session, "recorder", None),
     )
+
+
+def _save_recording(call: Call, recorder: CallRecorder | None) -> None:
+    """Write the call's audio next to its transcript; a failed write must not lose the rest of the call."""
+    try:
+        name = save_recording(call.id, recorder)
+    except OSError as error:
+        print(f"[Recording] call {call.id}: could not save the recording: {error}")
+        return
+    if name:
+        call.recording_file = name
+        print(f"[Recording] call {call.id}: saved {name}")
 
 
 def _in_thread(fn, *args) -> asyncio.Future:
@@ -435,6 +450,7 @@ def _persist(call_id: int, record: CallRecord | None) -> None:
                             appointment_at=record.appointment_at)
         finalize_call(db, call, employee, lead, result, connected_seconds=record.connected_seconds,
                       now=datetime.utcnow())
+        _save_recording(call, record.recorder)
         db.commit()
 
     # Update per-lead conversation memory (outside the main transaction)
