@@ -885,3 +885,45 @@ async def test_voice(payload: dict):
         return {"error": "Synthesis failed. Check model status."}
 
     return FileResponse(tmp_path, media_type="audio/wav", filename="test_output.wav")
+
+
+# ── Client-facing per-agent report ──────────────────────────────────────
+
+@router.get("/report", response_class=HTMLResponse)
+def agent_report_page():
+    """The shareable client dashboard shell; it fetches its data from the report API with the share token."""
+    from pathlib import Path
+    return HTMLResponse((Path(__file__).parent / "agent_report.html").read_text(encoding="utf-8"))
+
+
+@router.get("/api/agents/{employee_id}/report")
+def agent_report_data(request: Request, employee_id: int, token: str = ""):
+    """An agent's details and every call's yes/no outcome. Open with a valid share `token`, or signed in."""
+    import hmac
+
+    from app.report import build_report, report_token
+
+    with SessionLocal() as db:
+        employee = db.get(AIEmployee, employee_id)
+        if employee is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        if token:
+            if not hmac.compare_digest(token, report_token(employee_id)):
+                raise HTTPException(status_code=403, detail="This report link is not valid")
+        elif employee.tenant_id != _require_tid(request):
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return build_report(db, employee)
+
+
+@router.get("/api/agents/{employee_id}/share")
+def agent_report_share(request: Request, employee_id: int):
+    """The shareable report link for this agent (signed-in owners only)."""
+    from app.report import report_token
+
+    tid = _require_tid(request)
+    with SessionLocal() as db:
+        employee = db.get(AIEmployee, employee_id)
+        if employee is None or employee.tenant_id != tid:
+            raise HTTPException(status_code=404, detail="Agent not found")
+    token = report_token(employee_id)
+    return {"token": token, "path": f"/dashboard/report?agent={employee_id}&token={token}"}
