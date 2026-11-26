@@ -16,6 +16,7 @@ class InboundEvent:
     stream_sid: str | None = None
     audio: bytes | None = None
     raw: dict = field(default_factory=dict)
+    digit: str = ""  # the key pressed, on a "dtmf" event
 
 
 def parse_event(text: str) -> InboundEvent:
@@ -30,7 +31,11 @@ def parse_event(text: str) -> InboundEvent:
     audio = None
     if kind == "media":
         audio = base64.b64decode(data["media"]["payload"])
-    return InboundEvent(kind=kind, stream_sid=stream_sid, audio=audio, raw=data)
+    digit = ""
+    if kind == "dtmf":
+        dtmf = data.get("dtmf")
+        digit = str((dtmf.get("digit") if isinstance(dtmf, dict) else dtmf) or data.get("digit") or "")
+    return InboundEvent(kind=kind, stream_sid=stream_sid, audio=audio, raw=data, digit=digit)
 
 
 def media_message(stream_sid: str, pcm: bytes) -> str:

@@ -258,6 +258,10 @@ async def media_stream(websocket: WebSocket, call_id: int, token: str = ""):
                 session = await _open_session(call_id, event.stream_sid or "", websocket)
             elif event.kind == "media" and session is not None and event.audio:
                 await session.on_audio(event.audio)
+            elif event.kind == "dtmf":
+                print(f"[WS] keypress {event.digit!r}: {event.raw}")
+                if session is not None and hasattr(session, "on_dtmf"):
+                    await session.on_dtmf(event.digit)
             elif event.kind == "stop":
                 break
     except (WebSocketDisconnect, RuntimeError):
