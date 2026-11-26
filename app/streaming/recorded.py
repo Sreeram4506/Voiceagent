@@ -1,4 +1,5 @@
-"""Recorded-audio session: plays a pre-recorded audio file, takes the caller's yes/no answer, then hangs up."""
+"""Recorded-audio session: plays a pre-recorded audio file, takes the caller's yes/no answer, thanks them, then
+hangs up."""
 
 import asyncio
 import base64
@@ -10,6 +11,7 @@ from contextlib import suppress
 
 from app.streaming.call_recorder import recorder_from_env
 from app.streaming.protocol import clear_message, media_message
+from app.streaming.thanks import thanks_audio
 from app.streaming.yes_no import (
     AnswerListener, answer_from_digit, classify_reply, transcribe_reply, wav_bytes,
 )
@@ -57,6 +59,8 @@ class RecordedAudioSession:
         on_end,
         transcribe: Callable[[bytes], Awaitable[str]] = transcribe_reply,
         answer_wait: float = ANSWER_WAIT_SECONDS,
+        language: str = "te",
+        thanks: Callable[[str], bytes] | None = None,
     ):
         self._pcm = pcm
         self._audio_b64 = audio_b64
@@ -67,6 +71,8 @@ class RecordedAudioSession:
         self._on_end = on_end
         self._transcribe = transcribe
         self._answer_wait = answer_wait
+        # The thank-you for an answer: "yes", "no" or "unclear" -> phone-ready PCM.
+        self._thanks = thanks or (lambda answer: thanks_audio(language, answer))
 
         self.turns: list[tuple[str, str]] = [("agent", f"(recorded audio: {filename})")]
         self.actions: list[str] = []
@@ -95,6 +101,7 @@ class RecordedAudioSession:
             print(f"[RECORDED] error: {e}")
         self._result = self._result or (f"said_{self._answer}" if self._answer else "no_reply")
         print(f"[RECORDED] answer: {self._result}")
+        await self._thank()
         self.ended = True
         if self._on_end:
             try:
@@ -127,6 +134,29 @@ class RecordedAudioSession:
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._key_pressed.wait(), seconds)
         return self._key_pressed.is_set()
+
+    async def _thank(self) -> None:
+        """Thank them once they have answered. Silence gets no thank-you: nobody may be listening."""
+        answer = self._answer or ("unclear" if self._result == "unclear_reply" else "")
+        if not answer:
+            return
+        try:
+            await self._say(self._thanks(answer))
+        except Exception as e:
+            print(f"[RECORDED] could not play the thank-you: {e}")
+
+    async def _say(self, pcm: bytes) -> None:
+        """Play audio to the end, then a short pause so the last word is not cut off by the hang-up."""
+        if not pcm:
+            return
+        chunk_bytes = 8000 * 2
+        for i in range(0, len(pcm), chunk_bytes):
+            chunk = pcm[i:i + chunk_bytes]
+            if self.recorder:
+                self.recorder.agent(chunk, start=time.monotonic())
+            await self._safe_send(media_message(self.stream_sid, chunk))
+            await asyncio.sleep(len(chunk) / (8000 * 2))
+        await asyncio.sleep(0.3)
 
     async def _listen(self) -> None:
         """After the message: wait for a keypress or a spoken reply."""

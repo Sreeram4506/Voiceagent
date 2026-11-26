@@ -77,7 +77,7 @@ def make_session(transcript: str = "", **timing):
         return transcript
 
     session = RecordedAudioSession(pcm=bytes(8000), stream_sid="s1", send=send, on_end=end,
-                                   transcribe=transcribe, **timing)
+                                   transcribe=transcribe, thanks=lambda answer: b"", **timing)
     return session, sent, ended, heard
 
 
@@ -171,3 +171,85 @@ def test_recorded_call_is_recorded_with_the_answer(monkeypatch, tmp_path):
     session = asyncio.run(scenario())
     assert session.outcome() == "said_yes"
     assert session.recorder is not None and session.recorder.has_audio()
+
+
+# ---- thank-you after the answer ---------------------------------------------
+
+def make_thanking_session(transcript: str = "", **timing):
+    sent: list[dict] = []
+    ended_at: list[float] = []
+    thanked: list[str] = []
+
+    async def send(message: str) -> None:
+        sent.append(json.loads(message))
+
+    async def end() -> None:
+        ended_at.append(asyncio.get_running_loop().time())
+
+    async def transcribe(wav: bytes) -> str:
+        return transcript
+
+    def thanks(answer: str) -> bytes:
+        thanked.append(answer)
+        return bytes(8000)  # half a second
+
+    session = RecordedAudioSession(pcm=bytes(8000), stream_sid="s1", send=send, on_end=end,
+                                   transcribe=transcribe, thanks=thanks, **timing)
+    return session, sent, ended_at, thanked
+
+
+def test_keypress_yes_is_thanked_before_hanging_up():
+    async def scenario():
+        session, sent, ended_at, thanked = make_thanking_session()
+        loop = asyncio.get_running_loop()
+        await session.start()
+        await asyncio.sleep(0.05)
+        pressed_at = loop.time()
+        await session.on_dtmf("1")
+        await asyncio.sleep(1.2)
+        return session, sent, ended_at, thanked, pressed_at
+
+    session, sent, ended_at, thanked, pressed_at = asyncio.run(scenario())
+    assert thanked == ["yes"]
+    assert session.outcome() == "said_yes"
+    assert ended_at and ended_at[0] - pressed_at >= 0.45  # the half-second thank-you played first
+    assert any(m["event"] == "playAudio" for m in sent[-2:])
+
+
+def test_spoken_no_and_unclear_replies_are_thanked_too():
+    for transcript, expected in (("వద్దు", "no"), ("ఎవరు?", "unclear")):
+        async def scenario():
+            session, _, ended_at, thanked = make_thanking_session(transcript=transcript, answer_wait=1.0)
+            await session.start()
+            await asyncio.sleep(1.1)
+            for _ in range(25):
+                await session.on_audio(voice())
+            for _ in range(60):
+                await session.on_audio(SILENCE)
+            await asyncio.sleep(0.9)
+            return ended_at, thanked
+
+        ended_at, thanked = asyncio.run(scenario())
+        assert thanked == [expected] and ended_at, transcript
+
+
+def test_silence_gets_no_thank_you():
+    async def scenario():
+        session, _, ended_at, thanked = make_thanking_session(answer_wait=0.3)
+        await session.start()
+        await asyncio.sleep(1.6)
+        return ended_at, thanked
+
+    ended_at, thanked = asyncio.run(scenario())
+    assert ended_at and thanked == []
+
+
+def test_thank_you_clips_exist_for_telugu_and_english():
+    from app.streaming.thanks import thanks_audio
+
+    for language in ("te", "en"):
+        for answer in ("yes", "no", "unclear"):
+            clip = thanks_audio(language, answer)
+            assert 8000 * 2 * 1 < len(clip) < 8000 * 2 * 8, (language, answer)  # 1-8 s of 8 kHz audio
+    assert thanks_audio("hi", "yes") == thanks_audio("en", "yes")  # other languages hear English
+    assert thanks_audio("te", "unclear") == thanks_audio("te", "no")
