@@ -19,7 +19,9 @@ from scipy.signal import firwin, lfilter
 from app.streaming.echo_gate import frame_levels
 from app.streaming.protocol import clear_message
 from app.streaming.realtime_cost import GeminiUsage
-from app.streaming.realtime_session import _HEADERS_KW, END_OF_TURN_SILENCE_MS, GOODBYE_ASK, TOOLS, RealtimeSession
+from app.streaming.realtime_session import (
+    _HEADERS_KW, END_OF_TURN_SILENCE_MS, GOODBYE_ASK, TOOLS, RealtimeSession, is_goodbye,
+)
 
 GEMINI_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
@@ -74,6 +76,8 @@ class GeminiLiveSession(RealtimeSession):
         self._log: list[list[str]] = []  # [role, text] in call order
         self._turn = 0
         self._turn_done = asyncio.Event()
+        self._turn_text = ""  # what the agent has said in the reply now being spoken
+        self._turn_cut_off = False  # the caller interrupted that reply
 
     @property
     def turns(self) -> list[tuple[str, str]]:
@@ -180,7 +184,9 @@ class GeminiLiveSession(RealtimeSession):
         said = (content.get("outputTranscription") or {}).get("text")
         if said:
             self._add_text("agent", said)
+            self._turn_text += said
         if content.get("interrupted"):
+            self._turn_cut_off = True
             await self._barge_in()
         for part in (content.get("modelTurn") or {}).get("parts") or []:
             data = (part.get("inlineData") or {}).get("data")
@@ -191,7 +197,12 @@ class GeminiLiveSession(RealtimeSession):
             self._turn += 1
             self._responding = False
             self._turn_done.set()
-            if self._giving_up and self._spoke_since_caller and self._end_task is None:
+            # Gemini often says its goodbye but never calls end_call, which left callers on an open line.
+            # A person hangs up after their own goodbye, unless the caller cut in to say something more.
+            said_goodbye = is_goodbye(self._turn_text) and not self._turn_cut_off
+            self._turn_text, self._turn_cut_off = "", False
+            if (said_goodbye or (self._giving_up and self._spoke_since_caller)) and self._end_task is None:
+                print("[Gemini] agent said goodbye: hanging up once it has played")
                 self._end_task = asyncio.create_task(self._finish())
 
     def _add_text(self, role: str, text: str) -> None:

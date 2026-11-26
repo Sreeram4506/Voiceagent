@@ -247,3 +247,54 @@ def test_saved_call_record_keeps_the_agreed_booking_time():
     session = make_session()[0]
     session.record_booking({"date": "2099-01-05", "time": "10:30"})
     assert _record_of(session).appointment_at == __import__("datetime").datetime(2099, 1, 5, 5, 0)
+
+
+def said(text: str) -> dict:
+    return {"serverContent": {"outputTranscription": {"text": text}}}
+
+
+def caller_said(text: str) -> dict:
+    return {"serverContent": {"inputTranscription": {"text": text}}}
+
+
+def test_agent_hangs_up_after_its_own_goodbye_even_without_end_call():
+    """Gemini often says bye but never calls end_call; the line must not stay open."""
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await session._on_message(caller_said("సరే, బై అండి"))
+        await session._on_message(speech(0.1))
+        await session._on_message(said("సరే అండి, థాంక్యూ, "))
+        await session._on_message(said("bye!"))
+        await session._on_message(TURN_DONE)
+        await asyncio.sleep(0.6)
+        assert ended and session.ended
+
+    asyncio.run(scenario())
+
+
+def test_agent_keeps_the_line_open_when_bye_is_only_mentioned():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await session._on_message(speech(0.1))
+        await session._on_message(said("bye చెప్పే ముందు ఒక్క విషయం, డెమో ఎప్పుడు పెట్టుకుందాం?"))
+        await session._on_message(TURN_DONE)
+        await asyncio.sleep(0.6)
+        assert not ended
+
+    asyncio.run(scenario())
+
+
+def test_cut_off_goodbye_does_not_hang_up_on_the_caller():
+    async def scenario():
+        session, _, _, send, end, ended = make_session()
+        await session.attach("sid", send, end)
+        await session._on_message(speech(0.1))
+        await session._on_message(said("థాంక్యూ అండి, bye"))
+        await session._on_message({"serverContent": {"interrupted": True}})
+        await session._on_message(TURN_DONE)
+        await asyncio.sleep(0.6)
+        assert not ended  # the caller cut in, so they still have something to say
+
+    asyncio.run(scenario())
