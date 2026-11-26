@@ -18,6 +18,7 @@ import numpy as np
 import websockets
 
 from app.streaming.booking import BOOKING_PARAMETERS, DEFAULT_ZONE, booking_args, booking_time
+from app.streaming.call_recorder import recorder_from_env
 from app.streaming.echo_gate import EchoGate
 from app.streaming.protocol import clear_message, media_message
 from app.streaming.realtime_cost import RealtimeUsage
@@ -579,6 +580,7 @@ class RealtimeSession:
         self._send: Send | None = None
         self._on_end: OnEnd | None = None
         self._pending_out: list[tuple[str, bytes]] = []  # agent audio produced before the phone attached
+        self.recorder = recorder_from_env()  # both sides of the call, when VA_RECORDINGS_DIR is set
         self._play_until = 0.0  # monotonic time at which the phone finishes playing what we sent
         self._current_item = ""
         self._current_item_ms = 0.0
@@ -629,6 +631,8 @@ class RealtimeSession:
     async def attach(self, stream_sid: str, send: Send, on_end: OnEnd) -> None:
         """The phone audio stream is live: play whatever the agent has already said."""
         self.stream_sid, self._send, self._on_end = stream_sid, send, on_end
+        if self.recorder:
+            self.recorder.start(time.monotonic())
         self._guard_until = time.monotonic() + GREETING_GUARD_SECONDS
         self._quiet_since = time.monotonic()
         if self._silence_task is None:
@@ -674,6 +678,8 @@ class RealtimeSession:
 
     async def on_audio(self, frame: bytes) -> None:
         self.frames_received += 1
+        if self.recorder:
+            self.recorder.caller(frame)
         if self.ended or self._ws is None or time.monotonic() < self._guard_until:
             return
         audio = base64.b64encode(pcm_to_ulaw(self._without_echo(frame))).decode()
@@ -862,6 +868,8 @@ class RealtimeSession:
             print(f"[Realtime] agent audio starts at {now - self._t0:.2f}s")
         seconds = len(pcm) / 16000
         self._current_item_ms += seconds * 1000
+        if self.recorder:
+            self.recorder.agent(pcm, start=max(now, self._play_until))
         self._play_until = max(now, self._play_until) + seconds
         self._echo_gate.agent_audio(pcm)
         with suppress(RuntimeError, OSError):
@@ -876,6 +884,8 @@ class RealtimeSession:
         if unplayed <= 0:
             return
         self._play_until = now
+        if self.recorder:
+            self.recorder.cut_agent(now)
         with suppress(RuntimeError, OSError):
             await self._send(clear_message(self.stream_sid))
         if self._current_item:

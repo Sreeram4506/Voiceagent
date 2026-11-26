@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
+from app.streaming.call_recorder import save_recording
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.gemini_live_session import GEMINI_MODEL, GeminiLiveSession
@@ -346,6 +347,18 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
     return session
 
 
+def _save_recording(call: Call, session) -> None:
+    """Write the call's audio next to its transcript; a failed write must not lose the rest of the call."""
+    try:
+        name = save_recording(call.id, getattr(session, "recorder", None))
+    except OSError as error:
+        print(f"[Recording] call {call.id}: could not save the recording: {error}")
+        return
+    if name:
+        call.recording_file = name
+        print(f"[Recording] call {call.id}: saved {name}")
+
+
 def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAudioSession | None) -> None:
     """Write transcript, outcome, billing, and conversation memory once the stream closes."""
     if session is not None and session.persisted:
@@ -375,6 +388,7 @@ def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAu
         result = CallResult(outcome=session.outcome(), summary=summary, actions=session.actions, appointment_at=appointment_at)
         connected_seconds = session.frames_received * FRAME_MS // 1000
         finalize_call(db, call, employee, lead, result, connected_seconds=connected_seconds, now=datetime.utcnow())
+        _save_recording(call, session)
         db.commit()
         if session is not None:
             session.persisted = True

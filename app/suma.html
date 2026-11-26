@@ -1953,10 +1953,16 @@ async function renderCallHistory() {
                 <td>${fmtDur(c.duration)}</td>
                 <td class="text-[12px] text-on-surface-variant">${fmtDate(c.started)}</td>
                 <td>
+                  <div class="flex items-center gap-2">
+                  ${c.recording
+                    ? `<button onclick="playRecording('${c.recording}', ${c.id})" class="p-1 text-primary hover:bg-surface-container rounded" title="Play recording"><span class="material-symbols-outlined icon-sm">play_circle</span></button>`
+                    : ''
+                  }
                   ${c.turns?.length
                     ? `<button onclick="showTranscript(${c.id})" class="text-[11px] text-primary hover:underline">${c.turns.length} turns →</button>`
                     : '<span class="text-on-surface-variant text-[11px]">—</span>'
                   }
+                  </div>
                 </td>
               </tr>
             `).join('')}
@@ -1970,6 +1976,19 @@ async function renderCallHistory() {
 }
 
 let _callsData = [];
+function playRecording(url, callId) {
+  showModal(`
+    <div class="bg-white rounded-2xl p-5 w-[420px] max-w-[calc(100vw-32px)] shadow-modal">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="font-bold">Call #${Number(callId)} recording</h3>
+        <button onclick="hideModal()" class="p-1 hover:bg-surface-container-low rounded-lg"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <audio controls autoplay src="${esc(url)}" class="w-full"></audio>
+      <a href="${esc(url)}" download class="text-[12px] text-primary hover:underline mt-3 inline-block">Download WAV</a>
+    </div>
+  `);
+}
+
 function showTranscript(id) {
   const call = _callsData.find(c => c.id === id); if(!call) return;
   const turns = call.turns||[];
@@ -1982,6 +2001,7 @@ function showTranscript(id) {
         </div>
         <button onclick="hideModal()" class="p-1 hover:bg-surface-container-low rounded-lg"><span class="material-symbols-outlined">close</span></button>
       </div>
+      ${call.recording ? `<audio controls preload="none" src="${call.recording}" class="w-full mb-4"></audio>` : ''}
       <div class="space-y-3">
         ${turns.map(t => `
           <div class="flex gap-3 ${t.role==='agent'?'':'flex-row-reverse'}">
@@ -2160,6 +2180,7 @@ async function renderAppointments() {
                 <td class="text-[12px] text-on-surface-variant max-w-[200px] truncate">${esc(a.notes||'—')}</td>
                 <td>
                   <div class="flex gap-1">
+                    ${a.recording ? `<button onclick="playRecording('${a.recording}', ${a.call_id})" class="p-1 text-on-surface-variant hover:text-primary hover:bg-surface-container rounded transition-colors" title="Play call recording"><span class="material-symbols-outlined icon-sm">play_circle</span></button>` : ''}
                     <button onclick="confirmAppt(${a.id})" class="p-1 text-on-surface-variant hover:text-tertiary hover:bg-surface-container rounded transition-colors" title="Confirm"><span class="material-symbols-outlined icon-sm">check_circle</span></button>
                     <button onclick="cancelAppt(${a.id})" class="p-1 text-on-surface-variant hover:text-error hover:bg-surface-container rounded transition-colors" title="Cancel"><span class="material-symbols-outlined icon-sm">cancel</span></button>
                   </div>
