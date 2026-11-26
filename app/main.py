@@ -257,7 +257,11 @@ async def plivo_status(call_id: int, request: Request):
             elif plivo_status_val not in ("ringing", "in-progress", "early-media"):
                 call.status = CallStatus.COMPLETED
 
-            call.outcome = hangup_cause or plivo_status_val or None
+            # The agent's outcome (appointment_booked, do_not_call, ...) is saved when the call's audio stream
+            # closes, often before this callback; Plivo's hang-up cause only fills the gap for calls that
+            # never had a conversation (no answer, busy, failed).
+            if not call.outcome:
+                call.outcome = hangup_cause or plivo_status_val or None
             try:
                 call.billed_seconds = int(duration)
             except (ValueError, TypeError):
