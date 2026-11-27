@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from app.config import get_settings
 from app.models import AIEmployee, AppSetting, Appointment, Call, CallStatus, CallTurn, Lead
+from app.streaming.call_recorder import recording_path
 
 # How each saved outcome maps to what a client wants to see.
 _INTERESTED = {"said_yes", "appointment_booked"}
@@ -94,6 +95,7 @@ def build_report(db, employee: AIEmployee) -> dict:
     }
     booked = set(demo_at)
 
+    token = report_token(employee.id)  # the same share token opens each call's recording
     rows, counts = [], dict.fromkeys(CATEGORIES, 0)
     for call in calls:
         cat = category(call)
@@ -108,6 +110,8 @@ def build_report(db, employee: AIEmployee) -> dict:
             "category_label": CATEGORY_LABEL[cat],
             "said": _caller_words(db, call.id),
             "talk_seconds": call.billed_seconds or 0,
+            "recording": (f"/dashboard/api/calls/{call.id}/recording?token={token}"
+                          if recording_path(call.recording_file) else None),
             "booked": call.id in booked,
             "demo_at": (demo_at[call.id].replace(tzinfo=timezone.utc).isoformat() if call.id in demo_at and demo_at[call.id] else None),
             "at": (call.started_at.replace(tzinfo=timezone.utc).isoformat() if call.started_at else None),

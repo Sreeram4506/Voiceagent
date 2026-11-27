@@ -58,6 +58,8 @@
     td.name { font-weight: 600; } td.said { color: var(--muted); min-width: 240px; } .mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
     td.name .sub { font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
     td.demo { white-space: nowrap; color: var(--muted); } td.demo.has { color: var(--ok); font-weight: 600; }
+    .play { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 999px; padding: 2px 12px; font-size: 13px; white-space: nowrap; }
+    .play:hover { border-color: var(--accent); } .play.on { background: var(--accent); color: #fff; }
     .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .c-interested { color: var(--ok); background: var(--ok-bg); } .c-not_interested { color: var(--bad); background: var(--bad-bg); }
     .c-maybe { color: var(--warn); background: var(--warn-bg); } .c-not_reached { color: var(--grey); background: var(--grey-bg); }
@@ -103,9 +105,10 @@
               </select>
             </div>
           </div>
+          <audio id="player" controls preload="none" hidden style="width:100%; margin-bottom:12px;"></audio>
           <div class="twrap">
             <table>
-              <thead><tr><th>Lead</th><th>Phone</th><th>Result</th><th>Demo booked</th><th>Talk</th><th>What they said</th></tr></thead>
+              <thead><tr><th>Lead</th><th>Phone</th><th>Result</th><th>Demo booked</th><th>Talk</th><th>Recording</th><th>What they said</th></tr></thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
@@ -187,8 +190,14 @@
         if (c.at) nameCell.appendChild(el('div', 'sub', 'Called ' + fmtWhen(c.at)));
         var resCell = el('td'); resCell.appendChild(el('span', 'pill c-' + c.category, c.category_label));
         var demoCell = el('td', 'demo' + (c.demo_at ? ' has' : ''), c.demo_at ? fmtWhen(c.demo_at) : '—');
+        var recCell = el('td');
+        if (c.recording) {
+          var btn = el('button', 'play', '▶ Play');
+          btn.addEventListener('click', function () { playRecording(c.recording, btn); });
+          recCell.appendChild(btn);
+        } else { recCell.textContent = '—'; }
         tr.append(nameCell, el('td', 'mono', esc(c.phone)), resCell, demoCell,
-          el('td', 'mono', fmtTalk(c.talk_seconds)), el('td', 'said', c.said || '—'));
+          el('td', 'mono', fmtTalk(c.talk_seconds)), recCell, el('td', 'said', c.said || '—'));
         return tr;
       }));
       document.getElementById('count').textContent = FILTER ? calls.length + ' of ' + DATA.calls.length : calls.length + ' calls';
@@ -203,6 +212,16 @@
         if (!r.ok) { showState('Could not load the report (' + r.status + ').'); return; }
         render(await r.json());
       } catch (e) { showState('Could not reach the server. Check your connection.'); }
+    }
+
+    var playingBtn = null;
+    function playRecording(url, btn) {
+      var player = document.getElementById('player');
+      if (playingBtn) playingBtn.classList.remove('on');
+      playingBtn = btn; btn.classList.add('on');
+      player.src = url; player.hidden = false;
+      player.play().catch(function () {});
+      player.scrollIntoView({ block: 'nearest' });
     }
 
     document.getElementById('filter').addEventListener('change', function (e) { FILTER = e.target.value; if (DATA) drawRows(); });
