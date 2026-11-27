@@ -165,14 +165,18 @@ def call_recording(request: Request, call_id: int, token: str = ""):
     """The call's audio. Opens with the agent's report share token, or a signed-in user of the same tenant."""
     import hmac
 
-    from app.report import report_token
+    from app.report import campaign_report_token, report_token
 
     with SessionLocal() as db:
         call = db.get(Call, call_id)
         if call is None:
             raise HTTPException(status_code=404, detail="No recording for this call")
         if token:
-            if not hmac.compare_digest(token, report_token(call.employee_id)):
+            valid = [report_token(call.employee_id)]  # the agent's report link
+            lead = db.get(Lead, call.lead_id) if call.lead_id else None
+            if lead and lead.campaign_id:
+                valid.append(campaign_report_token(lead.campaign_id))  # the campaign's report link
+            if not any(hmac.compare_digest(token, good) for good in valid):
                 raise HTTPException(status_code=403, detail="This recording link is not valid")
         elif call.tenant_id != _require_tid(request):
             raise HTTPException(status_code=404, detail="No recording for this call")
@@ -937,3 +941,38 @@ def agent_report_share(request: Request, employee_id: int):
             raise HTTPException(status_code=404, detail="Agent not found")
     token = report_token(employee_id)
     return {"token": token, "path": f"/dashboard/report?agent={employee_id}&token={token}"}
+
+
+@router.get("/api/campaigns/{campaign_id}/report")
+def campaign_report_data(request: Request, campaign_id: int, token: str = ""):
+    """One campaign's calls and outcomes. Open with the campaign's share token, or signed in."""
+    import hmac
+
+    from app.models import Campaign
+    from app.report import build_campaign_report, campaign_report_token
+
+    with SessionLocal() as db:
+        campaign = db.get(Campaign, campaign_id)
+        if campaign is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        if token:
+            if not hmac.compare_digest(token, campaign_report_token(campaign_id)):
+                raise HTTPException(status_code=403, detail="This report link is not valid")
+        elif campaign.tenant_id != _require_tid(request):
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        return build_campaign_report(db, campaign)
+
+
+@router.get("/api/campaigns/{campaign_id}/share")
+def campaign_report_share(request: Request, campaign_id: int):
+    """The shareable report link for this campaign (signed-in owners only)."""
+    from app.models import Campaign
+    from app.report import campaign_report_token
+
+    tid = _require_tid(request)
+    with SessionLocal() as db:
+        campaign = db.get(Campaign, campaign_id)
+        if campaign is None or campaign.tenant_id != tid:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+    token = campaign_report_token(campaign_id)
+    return {"token": token, "path": f"/dashboard/report?campaign={campaign_id}&token={token}"}

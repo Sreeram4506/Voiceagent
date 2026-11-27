@@ -122,6 +122,7 @@
     var ORDER = ['interested', 'maybe', 'not_interested', 'not_reached'];
     var qs = new URLSearchParams(location.search);
     var AGENT = qs.get('agent');
+    var CAMPAIGN = qs.get('campaign');
     var TOKEN = qs.get('token') || '';
     var FILTER = '';
     var DATA = null;
@@ -131,7 +132,11 @@
     function fmtTalk(s) { s = Number(s) || 0; if (!s) return '—'; return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
     function fmtWhen(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return '—'; } }
 
-    function apiUrl(suffix) { return '/dashboard/api/agents/' + encodeURIComponent(AGENT) + suffix + (TOKEN ? (suffix.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN) : ''); }
+    function apiUrl(suffix) {
+      var base = CAMPAIGN ? '/dashboard/api/campaigns/' + encodeURIComponent(CAMPAIGN)
+                          : '/dashboard/api/agents/' + encodeURIComponent(AGENT);
+      return base + suffix + (TOKEN ? (suffix.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN) : '');
+    }
 
     function showState(msg) { var s = document.getElementById('state'); s.textContent = msg; s.hidden = false; document.getElementById('report').hidden = true; }
 
@@ -141,8 +146,8 @@
       document.getElementById('report').hidden = false;
       document.getElementById('refresh').hidden = false;
 
-      var a = d.agent, s = d.summary;
-      document.getElementById('title').textContent = a.name;
+      var a = d.agent || {}, s = d.summary;
+      document.getElementById('title').textContent = d.title || a.name || 'Call report';
       document.getElementById('lede').innerHTML = 'This agent made <b>' + s.total + '</b> calls. <b>' + s.answered +
         '</b> answered, <b>' + s.interested + '</b> said yes' + (s.booked ? ', and <b>' + s.booked + '</b> booked a demo' : '') + '.';
 
@@ -204,7 +209,7 @@
     }
 
     async function load() {
-      if (!AGENT) { showState('No agent selected. Add ?agent=<id> to the link.'); return; }
+      if (!AGENT && !CAMPAIGN) { showState('No report selected. Add ?agent=<id> or ?campaign=<id> to the link.'); return; }
       try {
         var r = await fetch(apiUrl('/report'), { credentials: 'same-origin' });
         if (r.status === 403) { showState('This report link is not valid.'); return; }

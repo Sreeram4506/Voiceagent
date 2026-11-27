@@ -511,6 +511,7 @@ class RealtimeSession:
         local_time: datetime | None = None,
         language_style: str = "natural_mix",
         memory_context: str = "",
+        record: bool = True,
     ):
         self._api_key = api_key
         self._model = model
@@ -580,7 +581,7 @@ class RealtimeSession:
         self._send: Send | None = None
         self._on_end: OnEnd | None = None
         self._pending_out: list[tuple[str, bytes]] = []  # agent audio produced before the phone attached
-        self.recorder = recorder_from_env()  # both sides of the call, when VA_RECORDINGS_DIR is set
+        self.recorder = recorder_from_env(record)  # both sides of the call, when on and kept for this call
         self._play_until = 0.0  # monotonic time at which the phone finishes playing what we sent
         self._current_item = ""
         self._current_item_ms = 0.0

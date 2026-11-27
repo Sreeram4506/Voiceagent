@@ -61,6 +61,7 @@ class RecordedAudioSession:
         answer_wait: float = ANSWER_WAIT_SECONDS,
         language: str = "te",
         thanks: Callable[[str], bytes] | None = None,
+        record: bool = True,
     ):
         self._pcm = pcm
         self._audio_b64 = audio_b64
@@ -85,7 +86,8 @@ class RecordedAudioSession:
         self._key_pressed = asyncio.Event()
         self._answer = ""  # "yes" / "no" once known
         self._result = ""  # said_yes, said_no, unclear_reply, no_reply
-        self.recorder = recorder_from_env()  # the message and the answer, when VA_RECORDINGS_DIR is set
+        self._record = record
+        self.recorder = recorder_from_env(self._record)  # the message and answer, when on and kept for this call
 
     async def start(self) -> None:
         if self.recorder:

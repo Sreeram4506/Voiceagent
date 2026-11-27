@@ -12,7 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
+from app.models import AIEmployee, Call, Campaign, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
 from app.streaming.call_recorder import save_recording
 from app.streaming import factory
@@ -57,6 +57,16 @@ class CallContext:
     agent_mode: str = "ai_agent"
     lead_id: int | None = None
     memory_context: str = ""
+    record: bool = True
+
+
+def _should_record(db, lead: Lead | None) -> bool:
+    """A campaign's calls are recorded only when the campaign opted in; ad-hoc test calls record as before."""
+    if lead is not None and lead.campaign_id:
+        campaign = db.get(Campaign, lead.campaign_id)
+        if campaign is not None:
+            return bool((campaign.config or {}).get("keep_recordings"))
+    return True
 
 
 def _load_context(call_id: int) -> CallContext | None:
@@ -87,6 +97,7 @@ def _load_context(call_id: int) -> CallContext | None:
             agent_mode=str(extras.get("agent_mode") or "ai_agent"),
             lead_id=lead_id,
             memory_context=memory_to_prompt(mem),
+            record=_should_record(db, lead),
         )
 
 
@@ -132,6 +143,7 @@ def _start_realtime(ctx: CallContext | None) -> RealtimeSession | None:
         "caller_notes": ctx.caller_notes,
         "local_time": _local_time(ctx.timezone),
         "memory_context": ctx.memory_context,
+        "record": ctx.record,
         **_persona_settings(ctx),
     }
     if factory.voice_engine() == "gemini":
@@ -203,7 +215,7 @@ def prepare_call(call_id: int) -> None:
                 pcm = await asyncio.to_thread(_to_pcm_8k, raw, audio.get("content_type", "audio/mpeg"))
                 print(f"[WS] prepared recorded audio: {len(pcm)} bytes PCM")
                 return {"type": "recorded", "pcm": pcm, "filename": audio.get("filename", "greeting.mp3"),
-                        "language": ctx.employee.language}
+                        "language": ctx.employee.language, "record": ctx.record}
             return None
         realtime = _start_realtime(ctx)
         if realtime is not None or ctx is None or ctx.mode == "broadcast":
@@ -300,6 +312,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
             stream_sid=stream_sid,
             send=send,
             on_end=end,
+            record=result.get("record", True),
         )
         holder["session"] = session
         await session.start()
@@ -330,6 +343,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
                     stream_sid=stream_sid,
                     send=send,
                     on_end=end,
+                    record=ctx.record,
                 )
                 holder["session"] = session
                 await session.start()
