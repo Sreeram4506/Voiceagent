@@ -1,24 +1,23 @@
 """Session-based authentication for the SUMA dashboard.
 
-Each browser session carries a signed cookie (suma_session) that maps to
-a tenant_id + user_id.  Sessions are stored in-memory (suitable for
-single-node dev/prod; swap _sessions for Redis in distributed setups).
+Each browser session carries a random cookie token (suma_session). The session itself is a row in
+user_sessions, keyed by a SHA-256 hash of the token, so logins survive restarts and work on every worker.
 """
 
 from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from app.db import SessionLocal
+from app.models import UserSession
 
-_sessions: dict[str, dict] = {}  # token -> session_data
 SESSION_COOKIE = "suma_session"
-_MAX_SESSIONS = 10_000
+SESSION_MAX_AGE_SECONDS = 86400 * 30  # matches the cookie's lifetime
 
 
 # ── Password helpers ──────────────────────────────────────────────────────
@@ -47,23 +46,38 @@ def hmac_compare(a: str, b: str) -> bool:
 
 
 # ── Session helpers ───────────────────────────────────────────────────────
+# These hit the database: call them from sync routes (FastAPI runs those in its threadpool)
+# or through run_in_threadpool, never directly on the event loop.
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 def create_session(tenant_id: int, user_id: int, email: str, role: str, name: str, tenant_name: str = "") -> str:
-    if len(_sessions) >= _MAX_SESSIONS:
-        # Evict oldest quarter
-        to_del = list(_sessions.keys())[:len(_sessions) // 4]
-        for k in to_del:
-            _sessions.pop(k, None)
     token = secrets.token_urlsafe(32)
-    _sessions[token] = {
+    now = _utcnow()
+    data = {
         "tenant_id": tenant_id,
         "user_id": user_id,
         "email": email,
         "role": role,
         "name": name,
         "tenant_name": tenant_name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.replace(tzinfo=timezone.utc).isoformat(),
     }
+    with SessionLocal() as db:
+        db.query(UserSession).filter(UserSession.expires_at < now).delete(synchronize_session=False)
+        db.add(UserSession(
+            token_hash=hash_token(token),
+            data=data,
+            created_at=now,
+            expires_at=now + timedelta(seconds=SESSION_MAX_AGE_SECONDS),
+        ))
+        db.commit()
     return token
 
 
@@ -71,7 +85,11 @@ def get_session_data(request: Request) -> dict | None:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
-    return _sessions.get(token)
+    with SessionLocal() as db:
+        row = db.get(UserSession, hash_token(token))
+        if row is None or row.expires_at <= _utcnow():
+            return None
+        return dict(row.data or {})
 
 
 def require_session(request: Request) -> dict:
@@ -87,8 +105,11 @@ def require_tenant_id(request: Request) -> int:
 
 def destroy_session(request: Request) -> None:
     token = request.cookies.get(SESSION_COOKIE)
-    if token:
-        _sessions.pop(token, None)
+    if not token:
+        return
+    with SessionLocal() as db:
+        db.query(UserSession).filter(UserSession.token_hash == hash_token(token)).delete(synchronize_session=False)
+        db.commit()
 
 
 def redirect_to_login(next_path: str = "/dashboard/") -> RedirectResponse:

@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import functools
 import hashlib
 import hmac
 import os
@@ -14,7 +15,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AIEmployee, Call, CallStatus, CallTurn, Lead
 from app.services.call_engine import CallResult, finalize_call
-from app.streaming.call_recorder import save_recording
+from app.streaming.call_recorder import CallRecorder, save_recording
 from app.streaming import factory
 from app.streaming.audio import FRAME_MS
 from app.streaming.gemini_live_session import GEMINI_MODEL, GeminiLiveSession
@@ -269,10 +270,13 @@ async def media_stream(websocket: WebSocket, call_id: int, token: str = ""):
         pass
     finally:
         _call_modes.pop(call_id, None)
-        if session is not None:
-            await session.cancel()
-        _persist(call_id, session)
-        _call_lead_ids.pop(call_id, None)
+        try:
+            if session is not None:
+                await session.cancel()
+        finally:
+            # Even if this handler is being cancelled, the call is still saved and billed.
+            await _persist_once(call_id, session)
+            _call_lead_ids.pop(call_id, None)
 
 
 async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> StreamSession | RealtimeSession | RecordedAudioSession:
@@ -283,7 +287,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
 
     async def end() -> None:
         try:
-            _persist(call_id, holder["session"])
+            await _persist_once(call_id, holder["session"])
         except Exception as e:
             print(f"[WS] persist error in end callback: {e}")
         await websocket.close()
@@ -315,7 +319,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
 
     ctx: CallContext | None = None
     if realtime is None:
-        ctx = _load_context(call_id)
+        ctx = await asyncio.to_thread(_load_context, call_id)
         if ctx is not None:
             _call_lead_ids[call_id] = ctx.lead_id
         if ctx is not None and ctx.agent_mode == "recorded_audio":
@@ -345,7 +349,7 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
         print("[WS] realtime voice unavailable, falling back to the STT/LLM/TTS pipeline")
         await realtime.cancel()
 
-    ctx = ctx or _load_context(call_id)
+    ctx = ctx or await asyncio.to_thread(_load_context, call_id)
     if ctx is None:
         raise RuntimeError(f"unknown call {call_id}")
     session = _stream_session(ctx, stream_sid, send, end)
@@ -354,10 +358,44 @@ async def _open_session(call_id: int, stream_sid: str, websocket: WebSocket) -> 
     return session
 
 
-def _save_recording(call: Call, session) -> None:
+LiveSession = StreamSession | RealtimeSession | RecordedAudioSession
+
+
+@dataclass(frozen=True)
+class CallRecord:
+    """What a finished call leaves behind, copied off the live session so another thread can save it."""
+
+    turns: tuple[tuple[str, str], ...]
+    outcome: str
+    actions: tuple[str, ...]
+    connected_seconds: int
+    cost_usd: float | None = None
+    usage_report: str = ""
+    provider: str = "OpenAI"  # who ran the call, named next to its cost in the summary
+    appointment_at: datetime | None = None  # the slot the caller agreed, in UTC
+    recorder: CallRecorder | None = None  # both sides of the call, when VA_RECORDINGS_DIR is set
+
+
+def _record_of(session: LiveSession) -> CallRecord:
+    """Read the session on the event loop thread, where its live state is safe to read."""
+    realtime = isinstance(session, RealtimeSession)
+    return CallRecord(
+        turns=tuple(session.turns),
+        outcome=session.outcome(),
+        actions=tuple(session.actions),
+        connected_seconds=session.frames_received * FRAME_MS // 1000,
+        cost_usd=session.cost_usd() if realtime else None,
+        usage_report=session.usage_report() if realtime else "",
+        provider="Gemini" if isinstance(session, GeminiLiveSession) else "OpenAI",
+        appointment_at=session.appointment_at() if realtime else None,
+        recorder=getattr(session, "recorder", None),
+    )
+
+
+def _save_recording(call: Call, recorder: CallRecorder | None) -> None:
     """Write the call's audio next to its transcript; a failed write must not lose the rest of the call."""
     try:
-        name = save_recording(call.id, getattr(session, "recorder", None))
+        name = save_recording(call.id, recorder)
     except OSError as error:
         print(f"[Recording] call {call.id}: could not save the recording: {error}")
         return
@@ -366,44 +404,66 @@ def _save_recording(call: Call, session) -> None:
         print(f"[Recording] call {call.id}: saved {name}")
 
 
-def _persist(call_id: int, session: StreamSession | RealtimeSession | RecordedAudioSession | None) -> None:
-    """Write transcript, outcome, billing, and conversation memory once the stream closes."""
-    if session is not None and session.persisted:
+def _in_thread(fn, *args) -> asyncio.Future:
+    """Start fn in the default thread pool right away, so it runs even if the caller is then cancelled."""
+    return asyncio.get_running_loop().run_in_executor(None, functools.partial(fn, *args))
+
+
+async def _persist_once(call_id: int, session: LiveSession | None) -> None:
+    """Save the call in a worker thread, off the event loop that carries every live call's audio.
+
+    The end-of-call callback and the socket closing can both get here at once; they share one save, so a
+    call is never written or billed twice. A save that failed is tried again by the next caller.
+    """
+    if session is None:
+        await asyncio.shield(_in_thread(_persist, call_id, None))
         return
+    if session.persisted:
+        return
+    task: asyncio.Future | None = getattr(session, "persist_task", None)
+    if task is None or task.done():  # first save, or the previous one failed
+        task = _in_thread(_save, call_id, session, _record_of(session))
+        session.persist_task = task
+    await asyncio.shield(task)
+
+
+def _save(call_id: int, session: LiveSession, record: CallRecord) -> None:
+    _persist(call_id, record)
+    session.persisted = True
+
+
+def _persist(call_id: int, record: CallRecord | None) -> None:
+    """Write transcript, outcome, billing, and conversation memory once the stream closes. Blocking."""
     with SessionLocal() as db:
         call = db.get(Call, call_id)
         if call is None:
             return
-        if session is None:
+        if record is None:
             call.status = CallStatus.FAILED
             db.commit()
             return
 
-        for role, text in session.turns:
+        for role, text in record.turns:
             db.add(CallTurn(call_id=call.id, role=role, text=text))
 
         lead = db.get(Lead, call.lead_id) if call.lead_id else None
         employee = db.get(AIEmployee, call.employee_id)
-        summary = f"{len(session.turns)} turns; outcome={session.outcome()}"
-        if isinstance(session, RealtimeSession):
-            print(f"[Cost] call {call_id} {session.usage_report()}")
-            cost = session.cost_usd()
-            if cost is not None:
-                provider = "Gemini" if isinstance(session, GeminiLiveSession) else "OpenAI"
-                summary += f"; {provider} ${cost:.4f}"
-        appointment_at = session.appointment_at() if isinstance(session, RealtimeSession) else None
-        result = CallResult(outcome=session.outcome(), summary=summary, actions=session.actions, appointment_at=appointment_at)
-        connected_seconds = session.frames_received * FRAME_MS // 1000
-        finalize_call(db, call, employee, lead, result, connected_seconds=connected_seconds, now=datetime.utcnow())
-        _save_recording(call, session)
+        summary = f"{len(record.turns)} turns; outcome={record.outcome}"
+        if record.usage_report:
+            print(f"[Cost] call {call_id} {record.usage_report}")
+        if record.cost_usd is not None:
+            summary += f"; {record.provider} ${record.cost_usd:.4f}"
+        result = CallResult(outcome=record.outcome, summary=summary, actions=list(record.actions),
+                            appointment_at=record.appointment_at)
+        finalize_call(db, call, employee, lead, result, connected_seconds=record.connected_seconds,
+                      now=datetime.utcnow())
+        _save_recording(call, record.recorder)
         db.commit()
-        if session is not None:
-            session.persisted = True
 
     # Update per-lead conversation memory (outside the main transaction)
     lead_id = _call_lead_ids.pop(call_id, None)
-    if session is not None and lead_id and session.turns:
+    if lead_id and record.turns:
         try:
-            update_memory(lead_id, session.turns, session.outcome())
+            update_memory(lead_id, list(record.turns), record.outcome)
         except Exception as e:
             print(f"[WS] memory update error: {e}")

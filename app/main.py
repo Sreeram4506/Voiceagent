@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 
 # Prevent transformers from importing TensorFlow — avoids NumPy 2 / TF incompatibility
@@ -7,9 +9,10 @@ os.environ.setdefault("COQUI_TOS_AGREED", "1")
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 if _env_path.exists():
@@ -24,15 +27,17 @@ from app.api.routes import router
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import Tenant
-from app.providers.base import TelephonyProvider
-from app.providers.mock import MockTelephony
+from app.providers.factory import get_telephony
+from app.services import autodialer
 from app.services.compliance import InMemoryDNDRegistry
+from app.services.retries import record_answer, record_hangup
 from app.services.scheduler import dispatch_due
 from app.dashboard import router as dashboard_router
 from app.dashboard_ops import ops as dashboard_ops_router
 from app.streaming.ws import discard_prepared, prepare_call, router as stream_router, stream_token
 from app.auth import (
     SESSION_COOKIE,
+    SESSION_MAX_AGE_SECONDS,
     authenticate_user,
     create_session,
     destroy_session,
@@ -40,6 +45,8 @@ from app.auth import (
     get_session_data,
     require_session,
 )
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="Voice Agent Platform", version="0.1.0")
 app.include_router(router, prefix="/v1")
@@ -66,25 +73,26 @@ async def api_login(request: Request):
     password = str(body.get("password") or "")
     if not email or not password:
         return JSONResponse({"detail": "Email and password required"}, status_code=400)
-    payload = authenticate_user(email, password)
+    # Password hashing (PBKDF2) and the session write are blocking: keep them off the event loop.
+    payload = await run_in_threadpool(authenticate_user, email, password)
     if not payload:
         return JSONResponse({"detail": "Invalid email or password"}, status_code=401)
-    token = create_session(**payload)
+    token = await run_in_threadpool(create_session, **payload)
     resp = JSONResponse({"ok": True, "user": payload})
-    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=86400 * 30)
+    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE_SECONDS)
     return resp
 
 
 @app.post("/dashboard/api/auth/logout")
 async def api_logout(request: Request):
-    destroy_session(request)
+    await run_in_threadpool(destroy_session, request)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION_COOKIE)
     return resp
 
 
 @app.get("/dashboard/api/auth/me")
-async def api_me(request: Request):
+def api_me(request: Request):
     sess = get_session_data(request)
     if not sess:
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
@@ -101,7 +109,7 @@ async def api_me(request: Request):
 # ── Tenant management (admin) ─────────────────────────────────────────────
 
 @app.get("/dashboard/api/tenants")
-async def list_tenants(request: Request):
+def list_tenants(request: Request):
     sess = require_session(request)
     if sess.get("role") != "superadmin":
         return JSONResponse({"detail": "Forbidden"}, status_code=403)
@@ -114,7 +122,7 @@ async def list_tenants(request: Request):
 
 @app.post("/dashboard/api/tenants")
 async def create_tenant(request: Request):
-    sess = require_session(request)
+    sess = await run_in_threadpool(require_session, request)
     if sess.get("role") not in ("admin", "superadmin"):
         return JSONResponse({"detail": "Forbidden"}, status_code=403)
     try:
@@ -126,6 +134,10 @@ async def create_tenant(request: Request):
     admin_password = str(body.get("password") or "suma2026")
     if not tenant_name or not admin_email:
         return JSONResponse({"detail": "name and email required"}, status_code=400)
+    return await run_in_threadpool(_create_tenant_with_admin, tenant_name, admin_email, admin_password)
+
+
+def _create_tenant_with_admin(tenant_name: str, admin_email: str, admin_password: str) -> dict:
     import secrets as _s
     from app.api.deps import hash_key
     from app.db import SessionLocal
@@ -151,22 +163,6 @@ def root():
     return RedirectResponse("/dashboard/")
 
 
-def get_telephony() -> TelephonyProvider:
-    """Plivo when credentials are configured; otherwise the offline mock."""
-    if os.getenv("TESTING") == "1":
-        return MockTelephony()
-    auth_id = os.getenv("PLIVO_AUTH_ID")
-    if auth_id:
-        from app.providers.plivo import PlivoTelephony
-
-        return PlivoTelephony(
-            auth_id,
-            os.environ["PLIVO_AUTH_TOKEN"],
-            public_url=get_settings().public_url,
-        )
-    return MockTelephony()
-
-
 @app.on_event("startup")
 def _startup() -> None:
     import traceback
@@ -184,6 +180,10 @@ def _startup() -> None:
     except Exception as e:
         print(f"[Startup] Default tenant creation failed: {e}")
         traceback.print_exc()
+    try:
+        autodialer.resume_all()  # dialers that were running before this restart carry on
+    except Exception:
+        log.exception("[Startup] could not resume auto-dialers")
     try:
         from app.streaming.xtts_provider import warmup
         warmup()
@@ -204,10 +204,12 @@ async def plivo_ring(call_id: int):
 
 
 @app.post("/v1/plivo/answer/{call_id}")
-async def plivo_answer(call_id: int, request: Request):
+async def plivo_answer(call_id: int, background: BackgroundTasks):
     """Plivo hits this when the callee answers. Returns XML that opens a bidirectional audio stream."""
     settings = get_settings()
     prepare_call(call_id)
+    # Marking the call answered can wait until the XML is on its way, so pickup isn't delayed.
+    background.add_task(record_answer, call_id)
     token = stream_token(call_id)
     ws_url = settings.public_url.replace("http://", "wss://").replace("https://", "wss://")
     xml = (
@@ -224,60 +226,15 @@ async def plivo_answer(call_id: int, request: Request):
 
 @app.post("/v1/plivo/status/{call_id}")
 async def plivo_status(call_id: int, request: Request):
-    """Plivo hangup/status callback. Updates call record with outcome and duration."""
+    """Plivo hangup callback: record how the call ended and queue a retry if it reached nobody."""
     discard_prepared(call_id)
     try:
         form = await request.form()
-        data = dict(form)
-    except Exception:
+        data = {key: str(value) for key, value in form.items()}
+    except Exception:  # a malformed body still ends the call
+        log.warning("plivo status callback for call %s had an unreadable body", call_id, exc_info=True)
         data = {}
-
-    from app.db import SessionLocal as SL
-    from app.models import Call, CallStatus, Lead, LeadStatus
-
-    status_map = {
-        "completed": CallStatus.COMPLETED,
-        "busy": CallStatus.BUSY,
-        "failed": CallStatus.FAILED,
-        "no-answer": CallStatus.NO_ANSWER,
-        "cancel": CallStatus.FAILED,
-        "hangup": CallStatus.COMPLETED,
-    }
-
-    with SL() as db:
-        call = db.get(Call, call_id)
-        if call:
-            plivo_status_val = str(data.get("CallStatus", data.get("Status", ""))).lower()
-            hangup_cause = str(data.get("HangupCause", data.get("HangupCauseName", "")))
-            duration = data.get("Duration", data.get("BillDuration", "0"))
-
-            new_status = status_map.get(plivo_status_val)
-            if new_status:
-                call.status = new_status
-            elif plivo_status_val not in ("ringing", "in-progress", "early-media"):
-                call.status = CallStatus.COMPLETED
-
-            # The agent's outcome (appointment_booked, do_not_call, ...) is saved when the call's audio stream
-            # closes, often before this callback; Plivo's hang-up cause only fills the gap for calls that
-            # never had a conversation (no answer, busy, failed).
-            if not call.outcome:
-                call.outcome = hangup_cause or plivo_status_val or None
-            try:
-                call.billed_seconds = int(duration)
-            except (ValueError, TypeError):
-                pass
-            call.ended_at = datetime.utcnow()
-
-            if call.lead_id:
-                lead = db.get(Lead, call.lead_id)
-                if lead and lead.status == LeadStatus.CALLING:
-                    if call.status in (CallStatus.COMPLETED, CallStatus.NO_ANSWER, CallStatus.BUSY):
-                        lead.status = LeadStatus.DONE
-                    elif call.status == CallStatus.FAILED:
-                        lead.status = LeadStatus.FAILED
-
-            db.commit()
-
+    await asyncio.to_thread(record_hangup, call_id, data)
     return Response(content="OK", media_type="text/plain")
 
 

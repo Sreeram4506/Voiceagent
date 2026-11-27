@@ -301,3 +301,30 @@ class TenantUser(Base):
     role: Mapped[str] = mapped_column(String(40), default="admin")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class UserSession(Base):
+    """A dashboard login. Only a hash of the cookie token is stored."""
+
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)  # tenant_id, user_id, email, role, name, tenant_name
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class AutoDialer(Base):
+    """A tenant's auto-dialer: whether it should run, its progress, and which worker holds it right now."""
+
+    __tablename__ = "auto_dialers"
+
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), primary_key=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)  # the dashboard's emergency "pause all"
+    total_dialed: Mapped[int] = mapped_column(Integer, default=0)
+    remaining: Mapped[int] = mapped_column(Integer, default=0)
+    waiting: Mapped[str] = mapped_column(Text, default="")
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)

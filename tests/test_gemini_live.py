@@ -186,6 +186,13 @@ def test_line_hiss_does_not_count_as_the_caller_talking():
     asyncio.run(scenario())
 
 
+def test_saved_call_record_names_gemini_as_the_provider():
+    from app.streaming.ws import _record_of
+
+    session = make_session()[0]
+    assert _record_of(session).provider == "Gemini"
+
+
 def audio_sent(to_gemini: list[dict]) -> int:
     return sum(1 for message in to_gemini if "realtimeInput" in message)
 
@@ -233,6 +240,13 @@ def test_female_agent_speaks_with_the_sulafat_voice():
     session = GeminiLiveSession("key", "Sell plots.", "te", model="gemini-3.8-live", voice_gender="female")
     voice = session._setup_message()["setup"]["generationConfig"]["speechConfig"]["voiceConfig"]
     assert voice == {"prebuiltVoiceConfig": {"voiceName": "Sulafat"}}
+
+
+def test_saved_call_record_keeps_the_agreed_booking_time():
+    from app.streaming.ws import _record_of
+    session = make_session()[0]
+    session.record_booking({"date": "2099-01-05", "time": "10:30"})
+    assert _record_of(session).appointment_at == __import__("datetime").datetime(2099, 1, 5, 5, 0)
 
 
 def said(text: str) -> dict:
@@ -284,3 +298,10 @@ def test_cut_off_goodbye_does_not_hang_up_on_the_caller():
         assert not ended  # the caller cut in, so they still have something to say
 
     asyncio.run(scenario())
+
+
+def test_saved_call_record_carries_the_recording(monkeypatch, tmp_path):
+    from app.streaming.ws import _record_of
+    monkeypatch.setenv("VA_RECORDINGS_DIR", str(tmp_path))
+    session = make_session()[0]
+    assert _record_of(session).recorder is session.recorder is not None

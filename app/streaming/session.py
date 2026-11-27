@@ -87,6 +87,9 @@ class StreamSession:
         """Opening line: speak the script directly, then wait for caller."""
         asyncio.create_task(self._warm_fillers())
         self._response = asyncio.create_task(self._speak_opening())
+        # Let the opening line begin before any caller audio that queued up during setup is handled;
+        # otherwise that burst of frames can read as a barge-in and cancel the opening before it starts.
+        await asyncio.sleep(0)
 
     async def cancel(self) -> None:
         if self._filler_task and not self._filler_task.done():

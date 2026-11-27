@@ -2,6 +2,7 @@
 
 import base64
 import json
+import time as wallclock
 from datetime import datetime, time
 
 import pytest
@@ -65,6 +66,16 @@ def connect(client, call_id):
     return client.websocket_connect(f"/v1/stream/{call_id}?token={stream_token(call_id)}")
 
 
+OPENING_SETTLE_SECONDS = 0.3
+
+
+def start_and_wait_for_opening(ws, stream_sid: str) -> None:
+    """Start the stream and give the opening line its turn, as on a real call where the caller
+    speaks after answering. Audio that arrives during the opening is ignored by design."""
+    ws.send_text(json.dumps({"event": "start", "stream_sid": stream_sid}))
+    wallclock.sleep(OPENING_SETTLE_SECONDS)
+
+
 def test_rejects_bad_token(client):
     call_id = seed_call()
     with pytest.raises(WebSocketDisconnect):
@@ -87,7 +98,7 @@ def test_caller_utterance_gets_spoken_reply_and_is_persisted(client, monkeypatch
 
     received = []
     with connect(client, call_id) as ws:
-        ws.send_text(json.dumps({"event": "start", "stream_sid": "S1"}))
+        start_and_wait_for_opening(ws, "S1")
         for msg in speech(400) + quiet(800):
             ws.send_text(msg)
         # Agent speaks, then ends the call, which closes the socket.
@@ -111,7 +122,18 @@ def test_caller_utterance_gets_spoken_reply_and_is_persisted(client, monkeypatch
         assert db.get(Lead, call.lead_id).status == LeadStatus.DONE
 
 
-def test_caller_barges_in_and_agent_is_cleared(client, monkeypatch):
+def call_turns(call_id: int) -> list[CallTurn]:
+    with SessionLocal() as db:
+        return db.query(CallTurn).filter_by(call_id=call_id).order_by(CallTurn.id).all()
+
+
+def finished_call(call_id: int) -> Call | None:
+    with SessionLocal() as db:
+        call = db.get(Call, call_id)
+        return call if call.status == CallStatus.COMPLETED else None
+
+
+def test_caller_barges_in_and_agent_is_cleared(client, monkeypatch, eventually):
     call_id = seed_call()
     long_reply = "Ji bilkul, main aapko poori jaankari deti hoon. Site visit ka time aap bata sakte hain. Aur kuch."
     use_providers(
@@ -121,7 +143,7 @@ def test_caller_barges_in_and_agent_is_cleared(client, monkeypatch):
     )
 
     with connect(client, call_id) as ws:
-        ws.send_text(json.dumps({"event": "start", "stream_sid": "S2"}))
+        start_and_wait_for_opening(ws, "S2")
         for msg in speech(400) + quiet(800):
             ws.send_text(msg)
 
@@ -142,27 +164,26 @@ def test_caller_barges_in_and_agent_is_cleared(client, monkeypatch):
         assert seen_clear, "agent playback should be cleared on barge-in"
         ws.send_text(json.dumps({"event": "stop"}))
 
-    with SessionLocal() as db:
-        turns = db.query(CallTurn).filter_by(call_id=call_id).order_by(CallTurn.id).all()
-        # The interrupted reply is not recorded as spoken; the caller's words are.
-        assert [t.role for t in turns] == ["caller"]
-        assert turns[0].text == "Pehli baat"
+    turns = eventually(lambda: call_turns(call_id))
+    # The interrupted reply is not recorded as spoken; the caller's words are.
+    assert [t.role for t in turns] == ["caller"]
+    assert turns[0].text == "Pehli baat"
 
 
-def test_stop_without_speech_still_finalizes(client, monkeypatch):
+def test_stop_without_speech_still_finalizes(client, monkeypatch, eventually):
     call_id = seed_call()
     use_providers(monkeypatch, MockAsyncSTT([]), MockAsyncLLM([[]]))
     with connect(client, call_id) as ws:
         ws.send_text(json.dumps({"event": "start", "stream_sid": "S3"}))
         ws.send_text(json.dumps({"event": "stop"}))
+        # Wait while the socket is open: leaving the block makes the test client cancel the handler.
+        call = eventually(lambda: finished_call(call_id))
 
-    with SessionLocal() as db:
-        call = db.get(Call, call_id)
-        assert call.status == CallStatus.COMPLETED
-        assert call.outcome == "no_resolution"
+    assert call is not None, "the call should be saved as completed"
+    assert call.outcome == "no_resolution"
 
 
-def test_stream_session_predefined_greeting(client, monkeypatch):
+def test_stream_session_predefined_greeting(client, monkeypatch, eventually):
     call_id = seed_call()
     with SessionLocal() as db:
         call = db.get(Call, call_id)
@@ -173,9 +194,8 @@ def test_stream_session_predefined_greeting(client, monkeypatch):
     with connect(client, call_id) as ws:
         ws.send_text(json.dumps({"event": "start", "stream_sid": "S4"}))
         ws.send_text(json.dumps({"event": "stop"}))
+        turns = eventually(lambda: call_turns(call_id))
 
-    with SessionLocal() as db:
-        turns = db.query(CallTurn).filter_by(call_id=call_id).order_by(CallTurn.id).all()
-        assert len(turns) >= 1
-        assert turns[0].role == "agent"
-        assert turns[0].text == "Namaskaram, ela unnaru?"
+    assert len(turns) >= 1
+    assert turns[0].role == "agent"
+    assert turns[0].text == "Namaskaram, ela unnaru?"

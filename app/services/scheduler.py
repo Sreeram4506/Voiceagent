@@ -1,16 +1,22 @@
 """Picks due leads and places calls, respecting compliance, concurrency, and each agent's ExoPhone."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, time
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import AIEmployee, Call, CallDirection, CallStatus, Campaign, CampaignStatus, Lead, LeadStatus, Tenant
-from app.providers.base import TelephonyProvider
+from app.providers.base import DialResult, TelephonyProvider
 from app.services.billing import balance_paise
 from app.services.compliance import DNDRegistry, check_lead, within_calling_window
+from app.services.retries import settle_lead, utc_naive
 from app.streaming.ws import set_call_mode
+
+log = logging.getLogger(__name__)
+
+DIALABLE = (LeadStatus.NEW, LeadStatus.QUEUED)
 
 
 @dataclass
@@ -28,11 +34,12 @@ def dispatch_due(
     retry_delay_minutes: int,
     batch_size: int = 50,
 ) -> DispatchReport:
+    """Dial due leads. Commits as it goes: each lead is claimed, and its call saved, before its phone rings."""
     leads = session.scalars(
         select(Lead)
         .outerjoin(Campaign, Lead.campaign_id == Campaign.id)
-        .where(Lead.status.in_([LeadStatus.NEW, LeadStatus.QUEUED]))
-        .where(Lead.next_attempt_at <= now)
+        .where(Lead.status.in_(DIALABLE))
+        .where(Lead.next_attempt_at <= utc_naive(now))
         # A campaign's contacts are dialed only while it runs; contacts outside any campaign as before.
         .where(or_(Lead.campaign_id.is_(None), Campaign.status == CampaignStatus.RUNNING))
         .order_by(Lead.next_attempt_at)
@@ -45,86 +52,113 @@ def dispatch_due(
         if len(report.dialed) >= batch_size:
             break
         employee = session.get(AIEmployee, lead.employee_id)
-        tenant = session.get(Tenant, lead.tenant_id)
-
-        if not employee or not tenant:
-            report.skipped[lead.id] = "missing_employee_or_tenant"
+        reason = _why_not_dial(session, lead, employee, now, dnd, retry_delay_minutes)
+        if reason is None and not claim_lead(session, lead, now):
+            reason = "already_dialing"  # another worker claimed it after we read it
+        if reason is not None:
+            report.skipped[lead.id] = reason
             continue
 
-        if not employee.phone_number:
-            report.skipped[lead.id] = "no_phone_number_assigned"
-            continue
+        call = _new_call(session, lead, employee, now)
+        session.commit()  # the claim and the call are saved before the phone rings
 
-        if balance_paise(session, tenant.id) <= 0:
-            report.skipped[lead.id] = "no_credits"
-            continue
-
-        in_flight = session.scalar(
-            select(func.count(Call.id)).where(
-                Call.employee_id == employee.id,
-                Call.status.in_([CallStatus.DIALING, CallStatus.CONNECTED]),
-            )
-        )
-        if in_flight >= employee.max_concurrency:
-            report.skipped[lead.id] = "concurrency_limit"
-            continue
-
-        decision = check_lead(lead, employee, now, dnd, retry_delay_minutes)
-        if not decision.allowed:
-            report.skipped[lead.id] = decision.reason
-            continue
-
-        # Create the call row first so its id can travel with the dial request.
-        call_mode = "ai_agent"
-        call_greeting = ""
-        if lead.campaign_id:
-            camp = session.get(Campaign, lead.campaign_id)
-            if camp:
-                call_greeting = camp.greeting or ""
-                if camp.config and isinstance(camp.config, dict):
-                    call_mode = camp.config.get("mode", "ai_agent")
-
-        call = Call(
-            tenant_id=tenant.id,
-            lead_id=lead.id,
-            employee_id=employee.id,
-            direction=CallDirection.OUTBOUND,
-            status=CallStatus.DIALING,
-            started_at=now,
-            captured_fields={
-                "phone": lead.phone_e164,
-                "name": lead.name,
-                "mode": call_mode,
-                "greeting": call_greeting,
-            },
-        )
-        session.add(call)
-        session.flush()
-        set_call_mode(call.id, call_mode)
-
-        result = telephony.dial(
-            lead.phone_e164,
-            employee.phone_number,
-            callback_url,
-            custom_field=str(call.id),
-        )
+        result = _dial(telephony, lead, employee, callback_url, call.id)
         call.provider_call_id = result.provider_call_id or None
-        if not result.accepted:
-            call.status = CallStatus.REFUSED
-
-        lead.attempts += 1
-        lead.last_called_at = now
-        lead.status = LeadStatus.CALLING if result.accepted else LeadStatus.QUEUED
-        if not result.accepted and result.reason == "refused":
-            # Carrier refusal: pause the campaign to protect the sender reputation.
-            employee.paused = True
         if result.accepted:
             report.dialed.append(lead.id)
         else:
+            call.status = CallStatus.REFUSED
+            settle_lead(lead, employee, CallStatus.REFUSED, now)
             report.skipped[lead.id] = result.reason or "dial_failed"
-
-    session.flush()
+            if result.reason == "refused":
+                # Carrier refusal: pause the campaign to protect the sender reputation.
+                employee.paused = True
+        session.commit()
     return report
+
+
+def _why_not_dial(
+    session: Session,
+    lead: Lead,
+    employee: AIEmployee | None,
+    now: datetime,
+    dnd: DNDRegistry,
+    retry_delay_minutes: int,
+) -> str | None:
+    """The reason this lead can't be dialed right now, or None when it can."""
+    tenant = session.get(Tenant, lead.tenant_id)
+    if not employee or not tenant:
+        return "missing_employee_or_tenant"
+    if not employee.phone_number:
+        return "no_phone_number_assigned"
+    if balance_paise(session, tenant.id) <= 0:
+        return "no_credits"
+    in_flight = session.scalar(
+        select(func.count(Call.id)).where(
+            Call.employee_id == employee.id,
+            Call.status.in_([CallStatus.DIALING, CallStatus.CONNECTED]),
+        )
+    )
+    if in_flight >= employee.max_concurrency:
+        return "concurrency_limit"
+    decision = check_lead(lead, employee, now, dnd, retry_delay_minutes)
+    return None if decision.allowed else decision.reason
+
+
+def claim_lead(session: Session, lead: Lead, now: datetime) -> bool:
+    """Mark the lead as being dialed, unless another dispatcher already did.
+
+    One conditional UPDATE is the lock: whoever flips the status from new/queued to calling owns the
+    lead, on SQLite and Postgres alike.
+    """
+    claimed = session.execute(
+        update(Lead)
+        .where(Lead.id == lead.id, Lead.status.in_(DIALABLE))
+        .values(status=LeadStatus.CALLING, attempts=Lead.attempts + 1, last_called_at=utc_naive(now))
+        .execution_options(synchronize_session=False)
+    ).rowcount == 1
+    if claimed:
+        session.refresh(lead, ["status", "attempts", "last_called_at"])
+    return claimed
+
+
+def _new_call(session: Session, lead: Lead, employee: AIEmployee, now: datetime) -> Call:
+    call_mode = "ai_agent"
+    call_greeting = ""
+    if lead.campaign_id:
+        camp = session.get(Campaign, lead.campaign_id)
+        if camp:
+            call_greeting = camp.greeting or ""
+            if camp.config and isinstance(camp.config, dict):
+                call_mode = camp.config.get("mode", "ai_agent")
+
+    call = Call(
+        tenant_id=lead.tenant_id,
+        lead_id=lead.id,
+        employee_id=employee.id,
+        direction=CallDirection.OUTBOUND,
+        status=CallStatus.DIALING,
+        started_at=utc_naive(now),
+        captured_fields={
+            "phone": lead.phone_e164,
+            "name": lead.name,
+            "mode": call_mode,
+            "greeting": call_greeting,
+        },
+    )
+    session.add(call)
+    session.flush()
+    set_call_mode(call.id, call_mode)
+    return call
+
+
+def _dial(telephony: TelephonyProvider, lead: Lead, employee: AIEmployee, callback_url: str, call_id: int) -> DialResult:
+    """Place the call. A network error counts as a failed dial, so the lead is released, not stuck as calling."""
+    try:
+        return telephony.dial(lead.phone_e164, employee.phone_number, callback_url, custom_field=str(call_id))
+    except Exception:
+        log.exception("dialing lead %s (call %s) failed", lead.id, call_id)
+        return DialResult(provider_call_id="", accepted=False, reason="dial_error")
 
 
 LOOKAHEAD_FACTOR = 10
