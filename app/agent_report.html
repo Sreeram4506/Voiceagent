@@ -145,8 +145,7 @@
 
       var agent = document.getElementById('agent');
       agent.replaceChildren();
-      var fields = [['Agent', a.name], ['Language', a.language], ['Voice', a.voice], ['Engine', a.engine],
-        ['Type', a.mode_label], ['Style', a.style]];
+      var fields = [['Agent', a.name], ['Language', a.language], ['Voice', a.voice], ['Style', a.style]];
       fields.forEach(function (f) {
         var box = el('div', 'f'); box.append(el('span', 'k', f[0]), el('span', 'v', esc(f[1]))); agent.appendChild(box);
       });
