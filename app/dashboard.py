@@ -161,12 +161,22 @@ def list_calls(request: Request):
 
 
 @router.get("/api/calls/{call_id}/recording")
-def call_recording(request: Request, call_id: int):
-    """The call's audio, only to a signed-in user of the same tenant."""
-    tid = _require_tid(request)
+def call_recording(request: Request, call_id: int, token: str = ""):
+    """The call's audio. Opens with the agent's report share token, or a signed-in user of the same tenant."""
+    import hmac
+
+    from app.report import report_token
+
     with SessionLocal() as db:
-        call = db.query(Call).filter(Call.id == call_id, Call.tenant_id == tid).first()
-        path = recording_path(call.recording_file) if call else None
+        call = db.get(Call, call_id)
+        if call is None:
+            raise HTTPException(status_code=404, detail="No recording for this call")
+        if token:
+            if not hmac.compare_digest(token, report_token(call.employee_id)):
+                raise HTTPException(status_code=403, detail="This recording link is not valid")
+        elif call.tenant_id != _require_tid(request):
+            raise HTTPException(status_code=404, detail="No recording for this call")
+        path = recording_path(call.recording_file)
     if path is None:
         raise HTTPException(status_code=404, detail="No recording for this call")
     return FileResponse(path, media_type="audio/wav", filename=f"call_{call_id}.wav")

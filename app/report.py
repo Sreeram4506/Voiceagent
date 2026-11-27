@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from app.config import get_settings
 from app.models import AIEmployee, AppSetting, Appointment, Call, CallStatus, CallTurn, Lead
+from app.streaming.call_recorder import recording_path
 
 # How each saved outcome maps to what a client wants to see.
 _INTERESTED = {"said_yes", "appointment_booked"}
@@ -86,12 +87,15 @@ def build_report(db, employee: AIEmployee) -> dict:
     """The agent's details, a yes/no summary, and every call — the whole payload the dashboard page renders."""
     extras = _extras(db, employee)
     calls = db.query(Call).filter(Call.employee_id == employee.id).order_by(Call.id.desc()).all()
-    booked = {
-        row.call_id
-        for row in db.query(Appointment.call_id).filter(Appointment.employee_id == employee.id).all()
+    # When each call booked a demo: the call id -> the agreed slot (stored as naive UTC), shown on the page.
+    demo_at = {
+        row.call_id: row.scheduled_at
+        for row in db.query(Appointment.call_id, Appointment.scheduled_at).filter(Appointment.employee_id == employee.id).all()
         if row.call_id
     }
+    booked = set(demo_at)
 
+    token = report_token(employee.id)  # the same share token opens each call's recording
     rows, counts = [], dict.fromkeys(CATEGORIES, 0)
     for call in calls:
         cat = category(call)
@@ -106,7 +110,10 @@ def build_report(db, employee: AIEmployee) -> dict:
             "category_label": CATEGORY_LABEL[cat],
             "said": _caller_words(db, call.id),
             "talk_seconds": call.billed_seconds or 0,
+            "recording": (f"/dashboard/api/calls/{call.id}/recording?token={token}"
+                          if recording_path(call.recording_file) else None),
             "booked": call.id in booked,
+            "demo_at": (demo_at[call.id].replace(tzinfo=timezone.utc).isoformat() if call.id in demo_at and demo_at[call.id] else None),
             "at": (call.started_at.replace(tzinfo=timezone.utc).isoformat() if call.started_at else None),
         })
 
