@@ -86,3 +86,18 @@ def test_report_api_opens_with_a_valid_token_and_refuses_a_bad_one(client):
 def test_report_page_is_served(client):
     r = client.get("/dashboard/report")
     assert r.status_code == 200 and "Agent Call Report" in r.text
+
+
+def test_report_includes_the_booked_demo_time():
+    from app.models import Appointment, AppointmentStatus
+    with SessionLocal() as db:
+        agent_id = _setup(db)
+        yes_call = next(c for c in db.query(Call).filter(Call.employee_id == agent_id) if "said_yes" in (c.summary or ""))
+        db.add(Appointment(tenant_id=yes_call.tenant_id, call_id=yes_call.id, employee_id=agent_id,
+                           contact_name="Lead", phone="+919999", scheduled_at=datetime(2026, 11, 28, 6, 30),
+                           status=AppointmentStatus.CONFIRMED))
+        db.commit()
+        report = build_report(db, db.get(AIEmployee, agent_id))
+    row = next(c for c in report["calls"] if c["booked"])
+    assert row["demo_at"] == "2026-11-28T06:30:00+00:00"
+    assert report["summary"]["booked"] == 1

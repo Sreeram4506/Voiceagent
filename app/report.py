@@ -86,11 +86,13 @@ def build_report(db, employee: AIEmployee) -> dict:
     """The agent's details, a yes/no summary, and every call — the whole payload the dashboard page renders."""
     extras = _extras(db, employee)
     calls = db.query(Call).filter(Call.employee_id == employee.id).order_by(Call.id.desc()).all()
-    booked = {
-        row.call_id
-        for row in db.query(Appointment.call_id).filter(Appointment.employee_id == employee.id).all()
+    # When each call booked a demo: the call id -> the agreed slot (stored as naive UTC), shown on the page.
+    demo_at = {
+        row.call_id: row.scheduled_at
+        for row in db.query(Appointment.call_id, Appointment.scheduled_at).filter(Appointment.employee_id == employee.id).all()
         if row.call_id
     }
+    booked = set(demo_at)
 
     rows, counts = [], dict.fromkeys(CATEGORIES, 0)
     for call in calls:
@@ -107,6 +109,7 @@ def build_report(db, employee: AIEmployee) -> dict:
             "said": _caller_words(db, call.id),
             "talk_seconds": call.billed_seconds or 0,
             "booked": call.id in booked,
+            "demo_at": (demo_at[call.id].replace(tzinfo=timezone.utc).isoformat() if call.id in demo_at and demo_at[call.id] else None),
             "at": (call.started_at.replace(tzinfo=timezone.utc).isoformat() if call.started_at else None),
         })
 

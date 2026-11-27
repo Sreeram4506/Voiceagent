@@ -56,6 +56,8 @@
     thead th { position: sticky; top: 0; background: var(--panel); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
     tbody tr:last-child td { border-bottom: 0; }
     td.name { font-weight: 600; } td.said { color: var(--muted); min-width: 240px; } .mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    td.name .sub { font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    td.demo { white-space: nowrap; color: var(--muted); } td.demo.has { color: var(--ok); font-weight: 600; }
     .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .c-interested { color: var(--ok); background: var(--ok-bg); } .c-not_interested { color: var(--bad); background: var(--bad-bg); }
     .c-maybe { color: var(--warn); background: var(--warn-bg); } .c-not_reached { color: var(--grey); background: var(--grey-bg); }
@@ -103,7 +105,7 @@
           </div>
           <div class="twrap">
             <table>
-              <thead><tr><th>Lead</th><th>Phone</th><th>Result</th><th>What they said</th><th>Talk</th></tr></thead>
+              <thead><tr><th>Lead</th><th>Phone</th><th>Result</th><th>Demo booked</th><th>Talk</th><th>What they said</th></tr></thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
@@ -124,6 +126,7 @@
     function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
     function esc(x) { return x == null ? '—' : String(x); }
     function fmtTalk(s) { s = Number(s) || 0; if (!s) return '—'; return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+    function fmtWhen(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return '—'; } }
 
     function apiUrl(suffix) { return '/dashboard/api/agents/' + encodeURIComponent(AGENT) + suffix + (TOKEN ? (suffix.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN) : ''); }
 
@@ -180,11 +183,13 @@
       var calls = DATA.calls.filter(function (c) { return !FILTER || c.category === FILTER; });
       tbody.replaceChildren.apply(tbody, calls.map(function (c) {
         var tr = el('tr');
-        var pill = el('span', 'pill c-' + c.category, c.category_label);
-        var resCell = el('td'); resCell.appendChild(pill);
-        if (c.booked) resCell.appendChild(el('span', 'booked', 'demo'));
-        tr.append(el('td', 'name', esc(c.name)), el('td', 'mono', esc(c.phone)), resCell,
-          el('td', 'said', c.said || '—'), el('td', 'mono', fmtTalk(c.talk_seconds)));
+        var nameCell = el('td', 'name');
+        nameCell.appendChild(el('div', null, esc(c.name)));
+        if (c.at) nameCell.appendChild(el('div', 'sub', 'Called ' + fmtWhen(c.at)));
+        var resCell = el('td'); resCell.appendChild(el('span', 'pill c-' + c.category, c.category_label));
+        var demoCell = el('td', 'demo' + (c.demo_at ? ' has' : ''), c.demo_at ? fmtWhen(c.demo_at) : '—');
+        tr.append(nameCell, el('td', 'mono', esc(c.phone)), resCell, demoCell,
+          el('td', 'mono', fmtTalk(c.talk_seconds)), el('td', 'said', c.said || '—'));
         return tr;
       }));
       document.getElementById('count').textContent = FILTER ? calls.length + ' of ' + DATA.calls.length : calls.length + ' calls';
