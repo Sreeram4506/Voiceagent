@@ -707,7 +707,7 @@ async function resumeCampaign(id) {
 // ═══════════════════════════════════════════════════════════
 // CREATE CAMPAIGN WIZARD (Screen 2)
 // ═══════════════════════════════════════════════════════════
-let _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true}};
+let _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true,keep_recordings:false}};
 
 async function renderCreateCampaign() {
   const lists = await api('/api/contact-lists');
@@ -861,6 +861,13 @@ function _renderWizard(lists=[], agents=[]) {
           <input type="number" class="input" id="wRetryHours" value="${d.retry_interval_hours||2}" min="1" max="48"/>
         </div>
       </div>
+      <label class="flex items-start gap-3 p-4 bg-surface-container-low rounded-xl cursor-pointer">
+        <input type="checkbox" id="wKeepRecordings" class="rounded mt-0.5" ${d.keep_recordings?'checked':''}/>
+        <span>
+          <span class="flex items-center gap-2 font-semibold text-on-surface"><span class="material-symbols-outlined icon-sm">mic</span> Keep call recordings</span>
+          <span class="block text-[12px] text-on-surface-variant mt-0.5">Save each call's audio so you can play it from the shared dashboard. Off by default.</span>
+        </span>
+      </label>
       <div class="p-4 bg-surface-container-low rounded-xl text-[12px] text-on-surface-variant">
         <div class="flex items-center gap-2 font-semibold text-on-surface mb-1"><span class="material-symbols-outlined icon-sm">info</span> TRAI Compliance</div>
         Calls will only be made between ${d.window_start||'09:30'}–${d.window_end||'18:30'} IST. No calls on national holidays. DND registry check is automatic.
@@ -882,6 +889,7 @@ function _renderWizard(lists=[], agents=[]) {
           ['Calling Window', `${d.window_start||'09:30'} – ${d.window_end||'18:30'}`],
           ['Concurrency', d.concurrency||40],
           ['Max Retries', d.max_retries||3],
+          ['Keep recordings', d.keep_recordings ? 'Yes' : 'No'],
         ].map(([label,val]) => `
           <div class="flex justify-between border-b border-surface-container-high pb-2 last:border-0">
             <span class="text-on-surface-variant font-medium">${label}</span>
@@ -962,6 +970,7 @@ function _wCollect() {
     d.concurrency = parseInt($('wConcurrency')?.value)||d.concurrency;
     d.max_retries = parseInt($('wRetries')?.value)||d.max_retries;
     d.retry_interval_hours = parseInt($('wRetryHours')?.value)||d.retry_interval_hours;
+    d.keep_recordings = !!$('wKeepRecordings')?.checked;
   }
 }
 
@@ -1001,7 +1010,7 @@ async function _wizardSubmit() {
   } else {
     toast('Campaign saved as draft');
   }
-  _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true}};
+  _wizard = {step:1,data:{name:'',objective:'Appointment Booking',language:'te',region:'',greeting:'',objections:[{trigger:'',response:''}],concurrency:40,window_start:'09:30',window_end:'18:30',max_retries:3,retry_interval_hours:2,contact_list_id:null,employee_id:null,apply_to_leads:true,keep_recordings:false}};
   go('all-campaigns');
 }
 

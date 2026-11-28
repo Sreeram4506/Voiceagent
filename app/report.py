@@ -34,6 +34,12 @@ def report_token(employee_id: int) -> str:
     return hmac.new(key, f"report:{int(employee_id)}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
+def campaign_report_token(campaign_id: int) -> str:
+    """The share token for one campaign's report, distinct from any agent's token."""
+    key = get_settings().stream_secret.encode()
+    return hmac.new(key, f"report:campaign:{int(campaign_id)}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
 def _agent_outcome(call: Call) -> str:
     """The agent's own outcome, read from the summary where the telephony hang-up cause has overwritten it."""
     match = re.search(r"outcome=([a-z_]+)", call.summary or "")
@@ -83,19 +89,8 @@ def _caller_words(db, call_id: int) -> str:
     return " ".join(t.text.strip() for t in turns if t.text and t.text.strip())[:200]
 
 
-def build_report(db, employee: AIEmployee) -> dict:
-    """The agent's details, a yes/no summary, and every call — the whole payload the dashboard page renders."""
-    extras = _extras(db, employee)
-    calls = db.query(Call).filter(Call.employee_id == employee.id).order_by(Call.id.desc()).all()
-    # When each call booked a demo: the call id -> the agreed slot (stored as naive UTC), shown on the page.
-    demo_at = {
-        row.call_id: row.scheduled_at
-        for row in db.query(Appointment.call_id, Appointment.scheduled_at).filter(Appointment.employee_id == employee.id).all()
-        if row.call_id
-    }
-    booked = set(demo_at)
-
-    token = report_token(employee.id)  # the same share token opens each call's recording
+def _call_rows(db, calls, demo_at: dict, token: str) -> tuple[list, dict]:
+    """Each call as a row for the page, plus the per-category counts. `token` opens each call's recording."""
     rows, counts = [], dict.fromkeys(CATEGORIES, 0)
     for call in calls:
         cat = category(call)
@@ -112,20 +107,45 @@ def build_report(db, employee: AIEmployee) -> dict:
             "talk_seconds": call.billed_seconds or 0,
             "recording": (f"/dashboard/api/calls/{call.id}/recording?token={token}"
                           if recording_path(call.recording_file) else None),
-            "booked": call.id in booked,
-            "demo_at": (demo_at[call.id].replace(tzinfo=timezone.utc).isoformat() if call.id in demo_at and demo_at[call.id] else None),
+            "booked": call.id in demo_at,
+            "demo_at": (demo_at[call.id].replace(tzinfo=timezone.utc).isoformat() if demo_at.get(call.id) else None),
             "at": (call.started_at.replace(tzinfo=timezone.utc).isoformat() if call.started_at else None),
         })
+    return rows, counts
 
-    answered = sum(1 for r in rows if r["talk_seconds"] > 0)
+
+def _payload(db, title: str, employee: AIEmployee | None, calls, demo_at: dict, token: str) -> dict:
+    rows, counts = _call_rows(db, calls, demo_at, token)
+    agent = _agent_block(db, employee, _extras(db, employee)) if employee else {}
     return {
-        "agent": _agent_block(db, employee, extras),
+        "title": title,
+        "agent": agent,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "summary": {
-            "total": len(rows),
-            "answered": answered,
-            "booked": len(booked & {r["id"] for r in rows}),
-            **counts,
-        },
+        "summary": {"total": len(rows), "answered": sum(1 for r in rows if r["talk_seconds"] > 0),
+                    "booked": len(demo_at), **counts},
         "calls": rows,
     }
+
+
+def build_report(db, employee: AIEmployee) -> dict:
+    """The agent's details, a yes/no summary, and every call the agent made — the whole page payload."""
+    calls = db.query(Call).filter(Call.employee_id == employee.id).order_by(Call.id.desc()).all()
+    demo_at = {
+        row.call_id: row.scheduled_at
+        for row in db.query(Appointment.call_id, Appointment.scheduled_at).filter(Appointment.employee_id == employee.id).all()
+        if row.call_id
+    }
+    return _payload(db, employee.name, employee, calls, demo_at, report_token(employee.id))
+
+
+def build_campaign_report(db, campaign) -> dict:
+    """One campaign's calls only (its leads' calls), with its agent's details and its own share token."""
+    calls = (db.query(Call).join(Lead, Call.lead_id == Lead.id)
+             .filter(Lead.campaign_id == campaign.id).order_by(Call.id.desc()).all())
+    demo_at = {
+        row.call_id: row.scheduled_at
+        for row in db.query(Appointment.call_id, Appointment.scheduled_at).filter(Appointment.campaign_id == campaign.id).all()
+        if row.call_id
+    }
+    employee = db.get(AIEmployee, campaign.employee_id) if campaign.employee_id else None
+    return _payload(db, campaign.name, employee, calls, demo_at, campaign_report_token(campaign.id))

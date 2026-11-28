@@ -123,3 +123,74 @@ def test_report_and_endpoint_expose_the_recording_with_the_share_token(client, m
     audio = client.get(f"/dashboard/api/calls/{call_id}/recording", params={"token": token})
     assert audio.status_code == 200 and audio.headers["content-type"] == "audio/wav"
     assert client.get(f"/dashboard/api/calls/{call_id}/recording", params={"token": "bad"}).status_code == 403
+
+
+def _campaign_setup(db) -> tuple[int, int]:
+    """An agent, a campaign, and three of the campaign's leads with calls (yes / no / not reached)."""
+    from app.models import Campaign, CampaignStatus
+    tenant = Tenant(name="Acme", api_key_hash="x", webhook_secret="s", webhook_url="https://hooks.example.com/in")
+    db.add(tenant)
+    db.flush()
+    agent = AIEmployee(tenant_id=tenant.id, name="Mahindra Follow-up", language="te", voice_tier=VoiceTier.PREMIUM,
+                       script="XUV 7XO follow-up.", window_start=dtime(9, 0), window_end=dtime(20, 0))
+    db.add(agent)
+    db.flush()
+    db.add(AppSetting(key=f"t{tenant.id}:employee_extras",
+                      value={str(agent.id): {"agent_mode": "ai_agent", "voice_gender": "female", "speaking_style": "professional"}}))
+    campaign = Campaign(tenant_id=tenant.id, employee_id=agent.id, name="Vijayawada Nov", status=CampaignStatus.RUNNING)
+    db.add(campaign)
+    db.flush()
+    for outcome, billed in (("appointment_booked", 55), ("do_not_call", 20), ("", 0)):
+        lead = Lead(tenant_id=tenant.id, employee_id=agent.id, campaign_id=campaign.id,
+                    phone_e164="+918800000" + str(billed), name="Lead", status=LeadStatus.DONE)
+        db.add(lead)
+        db.flush()
+        status = CallStatus.NO_ANSWER if billed == 0 else CallStatus.COMPLETED
+        call = Call(tenant_id=tenant.id, employee_id=agent.id, lead_id=lead.id, status=status, outcome=outcome,
+                    summary=f"3 turns; outcome={outcome}", billed_seconds=billed, started_at=datetime(2026, 11, 27, 11))
+        db.add(call)
+        db.flush()
+        if outcome == "appointment_booked":
+            db.add(CallTurn(call_id=call.id, role="caller", text="రేపు రండి"))
+    db.commit()
+    return agent.id, campaign.id
+
+
+def test_campaign_report_token_differs_from_the_agent_token():
+    from app.report import campaign_report_token
+    assert campaign_report_token(7) == campaign_report_token(7)
+    assert campaign_report_token(7) != campaign_report_token(8)
+    assert campaign_report_token(7) != report_token(7)  # distinct namespace
+    assert len(campaign_report_token(7)) == 32
+
+
+def test_build_campaign_report_covers_only_that_campaigns_calls():
+    from app.models import Campaign
+    from app.report import build_campaign_report
+    with SessionLocal() as db:
+        _, campaign_id = _campaign_setup(db)
+        report = build_campaign_report(db, db.get(Campaign, campaign_id))
+    assert report["title"] == "Vijayawada Nov"
+    assert report["summary"]["total"] == 3
+    assert report["summary"]["interested"] == 1
+    assert report["summary"]["not_interested"] == 1
+    assert report["summary"]["not_reached"] == 1
+    yes = next(c for c in report["calls"] if c["category"] == "interested")
+    assert yes["said"] == "రేపు రండి"
+
+
+def test_campaign_report_api_opens_with_the_campaign_token_and_refuses_a_bad_one(client):
+    from app.report import campaign_report_token
+    with SessionLocal() as db:
+        _, campaign_id = _campaign_setup(db)
+    token = campaign_report_token(campaign_id)
+    ok = client.get(f"/dashboard/api/campaigns/{campaign_id}/report", params={"token": token})
+    assert ok.status_code == 200 and ok.json()["summary"]["interested"] == 1
+    assert client.get(f"/dashboard/api/campaigns/{campaign_id}/report", params={"token": "wrong"}).status_code == 403
+
+
+def test_campaign_share_endpoint_is_owner_only(client):
+    """The share link (which hands out the token) is for signed-in owners, not the public token holder."""
+    with SessionLocal() as db:
+        _, campaign_id = _campaign_setup(db)
+    assert client.get(f"/dashboard/api/campaigns/{campaign_id}/share").status_code in (401, 403)

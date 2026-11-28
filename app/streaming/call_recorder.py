@@ -76,9 +76,9 @@ def recordings_dir() -> Path | None:
     return Path(folder) if folder else None
 
 
-def recorder_from_env() -> CallRecorder | None:
-    """A recorder for a new call, or None when recording is switched off."""
-    return CallRecorder() if recordings_dir() else None
+def recorder_from_env(enabled: bool = True) -> CallRecorder | None:
+    """A recorder for a new call, or None when recording is switched off or not wanted for this call."""
+    return CallRecorder() if enabled and recordings_dir() else None
 
 
 def save_recording(call_id: int, recorder: CallRecorder | None) -> str | None:

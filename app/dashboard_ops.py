@@ -132,6 +132,7 @@ def _serialize_campaign(db, c: Campaign, tid: int | None = None) -> dict:
         "max_retries": c.max_retries,
         "retry_interval_hours": c.retry_interval_hours,
         "config": c.config or {},
+        "keep_recordings": bool((c.config or {}).get("keep_recordings")),
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "launched_at": c.launched_at.isoformat() if c.launched_at else None,
         **stats,
@@ -331,6 +332,14 @@ def list_campaigns(request: Request):
         return [_serialize_campaign(db, c, tid) for c in rows]
 
 
+def _with_keep_recordings(payload: dict) -> dict:
+    """Merge the create payload's config with its keep_recordings toggle (the toggle wins)."""
+    config = dict(payload.get("config") or {})
+    if "keep_recordings" in payload:
+        config["keep_recordings"] = bool(payload["keep_recordings"])
+    return config
+
+
 @ops.post("/api/campaigns")
 def create_campaign(request: Request, payload: dict):
     tid = _require_tid(request)
@@ -352,7 +361,7 @@ def create_campaign(request: Request, payload: dict):
             max_retries=int(payload.get("max_retries") or 3),
             retry_interval_hours=int(payload.get("retry_interval_hours") or 2),
             status=CampaignStatus(payload.get("status") or "draft"),
-            config=payload.get("config") or {},
+            config=_with_keep_recordings(payload),
         )
         db.add(c)
         db.flush()
@@ -390,6 +399,8 @@ def patch_campaign(request: Request, campaign_id: int, payload: dict):
         ):
             if field in payload:
                 setattr(c, field, payload[field])
+        if "keep_recordings" in payload:
+            c.config = {**(c.config or {}), "keep_recordings": bool(payload["keep_recordings"])}
         if "status" in payload:
             try:
                 c.status = CampaignStatus(payload["status"])
